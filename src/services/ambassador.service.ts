@@ -3,12 +3,18 @@ import type { Session } from '@supabase/supabase-js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { createAnonClient, supabase } from '../config/supabase.js';
 import type {
+  ChangeAmbassadorPasswordInput,
   LoginAmbassadorInput,
+  RefreshAmbassadorTokenInput,
   RegisterAmbassadorInput,
+  UpdateAmbassadorProfileInput,
 } from '../schemas/ambassador.schema.js';
 
 const REFERRAL_CODE_LENGTH = 6;
 const REFERRAL_MAX_ATTEMPTS = 10;
+
+const PROFILE_SELECT =
+  'id, user_id, referral_code, total_referrals, total_earnings_ngn, pending_balance_ngn, bank_code, bank_name, account_number, account_name, campus_or_region, is_approved, profile_picture_url, verification_status, ambassador_ranking, state_covering, emergency_contact, audience_category, institution_or_organization, primary_operating, secondary_operating, social_media_platform, social_media_handle, social_media_target_audience, created_at, updated_at';
 
 export class AmbassadorService {
   /**
@@ -92,9 +98,7 @@ export class AmbassadorService {
         user_id: userId,
         referral_code: referralCode,
       })
-      .select(
-        'id, user_id, referral_code, total_referrals, total_earnings_ngn, pending_balance_ngn, campus_or_region, is_approved, created_at, updated_at',
-      )
+      .select(PROFILE_SELECT)
       .single();
 
     if (profileError) {
@@ -151,7 +155,7 @@ export class AmbassadorService {
     const { data: ambassadorProfile, error: profileError } = await anon
       .from('ambassador_profiles')
       .select(
-        'id, user_id, referral_code, total_referrals, total_earnings_ngn, pending_balance_ngn, campus_or_region, is_approved, created_at, updated_at',
+        PROFILE_SELECT,
       )
       .eq('user_id', userId)
       .single();
@@ -164,6 +168,152 @@ export class AmbassadorService {
       session: this.formatSession(session),
       user,
       ambassadorProfile,
+    };
+  }
+
+  /**
+   * Returns the ambassador's own profile by user_id.
+   */
+  async getProfile(userId: string) {
+    const { data, error } = await supabase
+      .from('ambassador_profiles')
+      .select(PROFILE_SELECT)
+      .eq('user_id', userId)
+      .single();
+
+    if (error) {
+      throw new HttpError(404, 'Ambassador profile not found');
+    }
+    return data;
+  }
+
+  /**
+   * Updates the ambassador's own profile + bank details. Verification status
+   * and ambassador ranking are excluded so an ambassador cannot escalate
+   * themselves; those remain admin-managed.
+   */
+  async updateProfile(userId: string, payload: UpdateAmbassadorProfileInput) {
+    const {
+      fullName,
+      whatsappNumber,
+      profilePictureUrl,
+      stateCovering,
+      emergencyContact,
+      audienceCategory,
+      institutionOrOrganization,
+      primaryOperating,
+      secondaryOperating,
+      socialMediaPlatform,
+      socialMediaHandle,
+      socialMediaTargetAudience,
+      bankCode,
+      bankName,
+      accountNumber,
+      accountName,
+    } = payload;
+
+    const profileUpdate: Record<string, unknown> = {};
+
+    if (profilePictureUrl !== undefined) profileUpdate.profile_picture_url = profilePictureUrl;
+    if (stateCovering !== undefined) profileUpdate.state_covering = stateCovering;
+    if (emergencyContact !== undefined) profileUpdate.emergency_contact = emergencyContact;
+    if (audienceCategory !== undefined) profileUpdate.audience_category = audienceCategory;
+    if (institutionOrOrganization !== undefined) profileUpdate.institution_or_organization = institutionOrOrganization;
+    if (primaryOperating !== undefined) profileUpdate.primary_operating = primaryOperating;
+    if (secondaryOperating !== undefined) profileUpdate.secondary_operating = secondaryOperating;
+    if (socialMediaPlatform !== undefined) profileUpdate.social_media_platform = socialMediaPlatform;
+    if (socialMediaHandle !== undefined) profileUpdate.social_media_handle = socialMediaHandle;
+    if (socialMediaTargetAudience !== undefined) profileUpdate.social_media_target_audience = socialMediaTargetAudience;
+    if (bankCode !== undefined) profileUpdate.bank_code = bankCode;
+    if (bankName !== undefined) profileUpdate.bank_name = bankName;
+    if (accountNumber !== undefined) profileUpdate.account_number = accountNumber;
+    if (accountName !== undefined) profileUpdate.account_name = accountName;
+
+    const { data, error } = await supabase
+      .from('ambassador_profiles')
+      .update(profileUpdate)
+      .eq('user_id', userId)
+      .select(PROFILE_SELECT)
+      .single();
+
+    if (error) {
+      throw new HttpError(500, `Failed to update profile: ${error.message}`);
+    }
+
+    if (fullName !== undefined || whatsappNumber !== undefined) {
+      const userUpdate: Record<string, unknown> = {};
+      if (fullName !== undefined) userUpdate.full_name = fullName;
+      if (whatsappNumber !== undefined) userUpdate.whatsapp_number = whatsappNumber;
+
+      const { error: userError } = await supabase
+        .from('users')
+        .update(userUpdate)
+        .eq('id', userId);
+
+      if (userError) {
+        throw new HttpError(500, `Failed to update user: ${userError.message}`);
+      }
+
+      if (fullName !== undefined) {
+        const { error: metaError } = await supabase.auth.admin.updateUserById(
+          userId,
+          { user_metadata: { full_name: fullName } },
+        );
+        if (metaError) {
+          throw new HttpError(500, `Failed to update user metadata: ${metaError.message}`);
+        }
+      }
+    }
+
+    return data;
+  }
+
+  /**
+   * Changes an ambassador's password. Verifies the current password first,
+   * then updates via Supabase Auth so the password is hashed correctly.
+   */
+  async changePassword(
+    userId: string,
+    email: string,
+    { currentPassword, newPassword }: ChangeAmbassadorPasswordInput,
+  ) {
+    const anon = createAnonClient();
+    const { error: signInError } = await anon.auth.signInWithPassword({
+      email,
+      password: currentPassword,
+    });
+
+    if (signInError) {
+      throw new HttpError(400, 'Current password is incorrect');
+    }
+
+    const { error } = await anon.auth.updateUser({ password: newPassword });
+    if (error) {
+      throw new HttpError(
+        500,
+        `Failed to change password: ${error.message}`,
+      );
+    }
+
+    return { updated: true };
+  }
+
+  /**
+   * Exchanges a refresh token for a fresh session. Useful when an access
+   * token can no longer be verified (e.g. after a project JWT key rotation).
+   */
+  async refreshSession({ refreshToken }: RefreshAmbassadorTokenInput) {
+    const anon = createAnonClient();
+    const { data, error } = await anon.auth.refreshSession({
+      refresh_token: refreshToken,
+    });
+
+    if (error || !data.session) {
+      throw new HttpError(401, 'Invalid or expired refresh token');
+    }
+
+    return {
+      session: this.formatSession(data.session),
     };
   }
 
