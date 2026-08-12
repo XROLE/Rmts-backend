@@ -21,6 +21,16 @@ export class AmbassadorService {
    * Generates a short, human-friendly referral code (e.g. "JANE84") and
    * guarantees it is unique across ambassador profiles.
    */
+  /**
+   * Builds a zero-padded numeric suffix with the requested number of digits.
+   */
+  private numericSuffix(length: number): string {
+    if (length <= 0) return '';
+    const min = length === 1 ? 0 : 10 ** (length - 1);
+    const max = 10 ** length - 1;
+    return randomInt(min, max).toString().padStart(length, '0');
+  }
+
   private async generateReferralCode(fullName: string): Promise<string> {
     const initials = fullName
       .trim()
@@ -32,7 +42,8 @@ export class AmbassadorService {
 
     for (let attempt = 0; attempt < REFERRAL_MAX_ATTEMPTS; attempt++) {
       const base = initials || 'AMBA';
-      const suffix = randomInt(10, 99).toString();
+      const suffixLength = Math.max(0, REFERRAL_CODE_LENGTH - base.length);
+      const suffix = this.numericSuffix(suffixLength);
       const candidate = `${base}${suffix}`.slice(0, REFERRAL_CODE_LENGTH);
 
       const { data, error } = await supabase
