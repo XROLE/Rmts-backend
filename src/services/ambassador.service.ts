@@ -126,6 +126,8 @@ export class AmbassadorService {
       full_name: fullName,
       email,
       whatsapp_number: whatsappNumber,
+      email_verified: false,
+      whatsapp_verified: false,
       role: 'ambassador' as const,
       is_active: true,
     };
@@ -155,7 +157,7 @@ export class AmbassadorService {
 
     const { data: user, error: userError } = await anon
       .from('users')
-      .select('id, full_name, email, whatsapp_number, role, is_active')
+      .select('id, full_name, email, whatsapp_number, email_verified, whatsapp_verified, role, is_active')
       .eq('id', userId)
       .single();
 
