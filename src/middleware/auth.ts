@@ -9,6 +9,17 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
+function decodeExpiry(token: string): number | null {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const json = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    return typeof json?.exp === 'number' ? json.exp : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Verifies the Supabase access token from the Authorization header and
  * attaches the authenticated user to req.user. Uses an isolated anon-key
@@ -21,16 +32,43 @@ export async function requireAuth(
 ): Promise<void> {
   try {
     const header = req.headers.authorization ?? '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : header;
 
-    if (!token) {
-      throw new HttpError(401, 'Authorization token is required');
+    if (!header || !header.startsWith('Bearer ')) {
+      throw new HttpError(
+        401,
+        'Malformed Authorization header. Expected: "Bearer <accessToken>"',
+      );
     }
+
+    const token = header.slice(7).trim();
+    if (!token) {
+      throw new HttpError(
+        401,
+        'Malformed Authorization header. Expected: "Bearer <accessToken>"',
+      );
+    }
+
+    console.log('[auth] token =', JSON.stringify(token));
 
     const anon = createAnonClient();
     const { data, error } = await anon.auth.getUser(token);
 
     if (error || !data.user) {
+      console.log('Supabase auth error:', {
+        message: error?.message,
+        name: error?.name,
+        status: error?.status,
+        tokenProvided: true,
+      });
+
+      const exp = decodeExpiry(token);
+      if (exp !== null && exp * 1000 <= Date.now()) {
+        throw new HttpError(
+          401,
+          'Access token expired. Refresh it via POST /api/v1/ambassadors/refresh',
+        );
+      }
+
       throw new HttpError(401, 'Invalid or expired token');
     }
 
