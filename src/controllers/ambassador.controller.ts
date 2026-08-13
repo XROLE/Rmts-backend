@@ -62,6 +62,32 @@ export const changeAmbassadorPassword = asyncHandler(
   },
 );
 
+export const uploadAmbassadorProfilePicture = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const file = (req as AuthenticatedRequest & { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({
+        success: false,
+        message: 'An image file is required',
+      });
+      return;
+    }
+
+    const result = await ambassadorService.uploadProfilePicture(req.user!.id, {
+      buffer: file.buffer,
+      mimetype: file.mimetype,
+      size: file.size,
+      originalname: file.originalname,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile picture updated successfully',
+      data: result,
+    });
+  },
+);
+
 export const refreshAmbassadorToken = asyncHandler(
   async (req: Request, res: Response) => {
     const data = await ambassadorService.refreshSession(req.body);

@@ -310,6 +310,72 @@ export class AmbassadorService {
   }
 
   /**
+   * Uploads an ambassador's profile picture to Supabase Storage and persists
+   * the resulting public URL on the ambassador_profiles record.
+   */
+  async uploadProfilePicture(
+    userId: string,
+    file: { buffer: Buffer; mimetype: string; size: number; originalname: string },
+  ) {
+    if (!file) {
+      throw new HttpError(400, 'An image file is required');
+    }
+
+    if (!file.mimetype.startsWith('image/')) {
+      throw new HttpError(400, 'Uploaded file must be an image');
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      throw new HttpError(400, 'Image must be at most 2MB');
+    }
+
+    const bucket = 'avatars';
+    const ext = (file.originalname.split('.').pop() || 'png')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+    const path = `ambassadors/${userId}/${Date.now()}.${ext}`;
+
+    const { error: bucketError } = await supabase.storage.createBucket(bucket, {
+      public: true,
+    });
+    if (bucketError && bucketError.message !== 'Bucket already exists') {
+      throw new HttpError(500, `Failed to prepare storage: ${bucketError.message}`);
+    }
+
+    const { error: uploadError } = await supabase.storage
+      .from(bucket)
+      .upload(path, file.buffer, {
+        contentType: file.mimetype,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw new HttpError(500, `Failed to upload image: ${uploadError.message}`);
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(path);
+
+    if (!publicUrlData?.publicUrl) {
+      throw new HttpError(500, 'Failed to resolve public image URL');
+    }
+
+    const { data, error } = await supabase
+      .from('ambassador_profiles')
+      .update({ profile_picture_url: publicUrlData.publicUrl })
+      .eq('user_id', userId)
+      .select(PROFILE_SELECT)
+      .single();
+
+    if (error) {
+      throw new HttpError(500, `Failed to update profile: ${error.message}`);
+    }
+
+    return { profile_picture_url: publicUrlData.publicUrl };
+  }
+
+  /**
    * Exchanges a refresh token for a fresh session. Useful when an access
    * token can no longer be verified (e.g. after a project JWT key rotation).
    */
