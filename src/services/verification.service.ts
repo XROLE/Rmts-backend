@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import { randomInt } from 'node:crypto';
 import { supabase } from '../config/supabase.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import type {
@@ -8,7 +7,6 @@ import type {
   VerificationChannel,
 } from '../schemas/verification.schema.js';
 
-const OTP_CODE_LENGTH = 4;
 const OTP_TTL_SECONDS = 600; // 10 minutes
 const OTP_MAX_ATTEMPTS = 5;
 
@@ -23,12 +21,6 @@ const CHANNEL_VERIFIED_COLUMN: Record<VerificationChannel, string> = {
 };
 
 export class VerificationService {
-  private generateCode(): string {
-    const min = 10 ** (OTP_CODE_LENGTH - 1);
-    const max = 10 ** OTP_CODE_LENGTH - 1;
-    return randomInt(min, max).toString();
-  }
-
   private mask(target: string, channel: VerificationChannel): string {
     if (channel === 'email') {
       const [local, domain] = target.split('@');
@@ -42,14 +34,13 @@ export class VerificationService {
   }
 
   /**
-   * Generates and stores an OTP for the user's contact on the given channel,
-   * then hands the code to the matching delivery provider.
+   * Stores a fixed mock OTP (7530) for the user's contact on the given channel
+   * and returns it. No external delivery provider is used.
    */
   async initiate(userId: string, { channel }: InitiateVerificationInput) {
     const target = await this.getTarget(userId, channel);
 
-    const isWhatsApp = channel === 'whatsapp';
-    const code = isWhatsApp ? '7530' : this.generateCode();
+    const code = '7530';
     const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000).toISOString();
 
     // Invalidate any previously issued, un-consumed codes for this channel so
@@ -83,27 +74,13 @@ export class VerificationService {
       );
     }
 
-    if (channel !== 'whatsapp') {
-      try {
-        await this.sendEmailOtp(target, code);
-      } catch (err) {
-        // Roll back the stored code so a failed delivery can be retried cleanly.
-        await supabase
-          .from('verification_codes')
-          .delete()
-          .eq('user_id', userId)
-          .eq('channel', channel)
-          .eq('code', code);
-        throw err;
-      }
-    }
-
     return {
       channel,
       target: this.mask(target, channel),
       expiresAt,
       resendAfterSeconds: 30,
-      ...(isWhatsApp ? { code, provider: 'mock' } : {}),
+      code,
+      provider: 'mock',
     };
   }
 
@@ -204,95 +181,6 @@ export class VerificationService {
       );
     }
     return target;
-  }
-
-  // ---------- Delivery providers ----------
-
-  private async sendEmailOtp(email: string, code: string): Promise<void> {
-    const provider = process.env.EMAIL_PROVIDER ?? 'resend';
-    if (provider === 'sendgrid') {
-      await this.sendViaSendGrid(email, code);
-      return;
-    }
-    await this.sendViaResend(email, code);
-  }
-
-  private async sendViaResend(email: string, code: string): Promise<void> {
-    const apiKey = process.env.RESEND_API_KEY;
-    const from = process.env.EMAIL_FROM ?? 'Roommate NG <no-reply@roommateng.com>';
-
-    if (!apiKey) {
-      throw new HttpError(
-        503,
-        'Email verification is not configured. Missing RESEND_API_KEY.',
-      );
-    }
-
-    let res: Response;
-    try {
-      res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          from,
-          to: [email],
-          subject: 'Your verification code',
-          text: `Your Roommate NG verification code is ${code}. It expires in 10 minutes.`,
-          html: `<p>Your Roommate NG verification code is</p><p style="font-size:24px;letter-spacing:4px;font-weight:700">${code}</p><p>It expires in 10 minutes. If you did not request this, you can safely ignore this email.</p>`,
-        }),
-      });
-    } catch (err) {
-      throw new HttpError(502, `Failed to reach email provider: ${String(err)}`);
-    }
-
-    if (!res.ok) {
-      const body = await res.text();
-      throw new HttpError(502, `Email provider error (${res.status}): ${body}`);
-    }
-  }
-
-  private async sendViaSendGrid(email: string, code: string): Promise<void> {
-    const apiKey = process.env.SENDGRID_API_KEY;
-    const from = process.env.EMAIL_FROM ?? 'no-reply@roommateng.com';
-
-    if (!apiKey) {
-      throw new HttpError(
-        503,
-        'Email verification is not configured. Missing SENDGRID_API_KEY.',
-      );
-    }
-
-    let res: Response;
-    try {
-      res = await fetch('https://api.sendgrid.com/v3/mail/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          personalizations: [{ to: [{ email }] }],
-          from: { email: from },
-          subject: 'Your verification code',
-          content: [
-            {
-              type: 'text/plain',
-              value: `Your Roommate NG verification code is ${code}. It expires in 10 minutes.`,
-            },
-          ],
-        }),
-      });
-    } catch (err) {
-      throw new HttpError(502, `Failed to reach email provider: ${String(err)}`);
-    }
-
-    if (!res.ok) {
-      const body = await res.text();
-      throw new HttpError(502, `Email provider error (${res.status}): ${body}`);
-    }
   }
 }
 
