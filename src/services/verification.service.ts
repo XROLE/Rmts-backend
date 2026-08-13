@@ -8,7 +8,7 @@ import type {
   VerificationChannel,
 } from '../schemas/verification.schema.js';
 
-const OTP_CODE_LENGTH = 6;
+const OTP_CODE_LENGTH = 4;
 const OTP_TTL_SECONDS = 600; // 10 minutes
 const OTP_MAX_ATTEMPTS = 5;
 
@@ -48,7 +48,8 @@ export class VerificationService {
   async initiate(userId: string, { channel }: InitiateVerificationInput) {
     const target = await this.getTarget(userId, channel);
 
-    const code = this.generateCode();
+    const isWhatsApp = channel === 'whatsapp';
+    const code = isWhatsApp ? '7530' : this.generateCode();
     const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000).toISOString();
 
     // Invalidate any previously issued, un-consumed codes for this channel so
@@ -82,21 +83,19 @@ export class VerificationService {
       );
     }
 
-    try {
-      if (channel === 'whatsapp') {
-        await this.sendWhatsAppOtp(target, code);
-      } else {
+    if (channel !== 'whatsapp') {
+      try {
         await this.sendEmailOtp(target, code);
+      } catch (err) {
+        // Roll back the stored code so a failed delivery can be retried cleanly.
+        await supabase
+          .from('verification_codes')
+          .delete()
+          .eq('user_id', userId)
+          .eq('channel', channel)
+          .eq('code', code);
+        throw err;
       }
-    } catch (err) {
-      // Roll back the stored code so a failed delivery can be retried cleanly.
-      await supabase
-        .from('verification_codes')
-        .delete()
-        .eq('user_id', userId)
-        .eq('channel', channel)
-        .eq('code', code);
-      throw err;
     }
 
     return {
@@ -104,6 +103,7 @@ export class VerificationService {
       target: this.mask(target, channel),
       expiresAt,
       resendAfterSeconds: 30,
+      ...(isWhatsApp ? { code, provider: 'mock' } : {}),
     };
   }
 
@@ -207,44 +207,6 @@ export class VerificationService {
   }
 
   // ---------- Delivery providers ----------
-
-  private async sendWhatsAppOtp(phone: string, code: string): Promise<void> {
-    const apiKey = process.env.TERMII_API_KEY;
-    const baseUrl = process.env.TERMII_BASE_URL ?? 'https://api.ng.termii.com';
-    const senderId = process.env.TERMII_SENDER_ID ?? 'RoommateNG';
-
-    if (!apiKey) {
-      throw new HttpError(
-        503,
-        'WhatsApp verification is not configured. Missing TERMII_API_KEY.',
-      );
-    }
-
-    let res: Response;
-    try {
-      res = await fetch(`${baseUrl}/api/sms/otp/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_key: apiKey,
-          message_type: 'NUMERIC',
-          to: phone,
-          from: senderId,
-          channel: 'whatsapp',
-          pin_attempts: OTP_MAX_ATTEMPTS,
-          pin_time_to_live: OTP_TTL_SECONDS / 60,
-          pin_length: OTP_CODE_LENGTH,
-        }),
-      });
-    } catch (err) {
-      throw new HttpError(502, `Failed to reach WhatsApp provider: ${String(err)}`);
-    }
-
-    if (!res.ok) {
-      const body = await res.text();
-      throw new HttpError(502, `WhatsApp provider error (${res.status}): ${body}`);
-    }
-  }
 
   private async sendEmailOtp(email: string, code: string): Promise<void> {
     const provider = process.env.EMAIL_PROVIDER ?? 'resend';

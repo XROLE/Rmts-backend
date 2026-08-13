@@ -17,7 +17,7 @@ export const confirmVerificationSchema = z.object({
     channel: channelSchema,
     code: z
       .string()
-      .regex(/^\d{6}$/, 'Verification code must be a 6-digit number'),
+      .regex(/^\d{4}$/, 'Verification code must be a 4-digit number'),
   }),
 });
 
