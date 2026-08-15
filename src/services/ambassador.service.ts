@@ -337,11 +337,14 @@ export class AmbassadorService {
       .replace(/[^a-z0-9]/g, '');
     const path = `ambassadors/${userId}/${Date.now()}.${ext}`;
 
-    const { error: bucketError } = await supabase.storage.createBucket(bucket, {
-      public: true,
-    });
-    if (bucketError && bucketError.message !== 'Bucket already exists') {
-      throw new HttpError(500, `Failed to prepare storage: ${bucketError.message}`);
+    const { data: existingBucket } = await supabase.storage.getBucket(bucket);
+    if (!existingBucket) {
+      const { error: bucketError } = await supabase.storage.createBucket(bucket, {
+        public: true,
+      });
+      if (bucketError && !/already exists/i.test(bucketError.message)) {
+        throw new HttpError(500, `Failed to prepare storage: ${bucketError.message}`);
+      }
     }
 
     const { error: uploadError } = await supabase.storage
