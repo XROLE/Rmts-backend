@@ -32,6 +32,7 @@ export const createProfileSchema = z.object({
     ),
     gender: GENDER,
     ageRange: z.string().min(1, 'Age range is required').max(20),
+    state: z.string().min(1, 'State is required').max(100),
     maritalStatus: MARITAL_STATUS.optional(),
     religion: z.string().max(50).optional(),
 

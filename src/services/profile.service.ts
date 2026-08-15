@@ -7,6 +7,7 @@ export interface CreateProfilePayload {
   phoneNumber: string;
   gender: 'male' | 'female' | 'no_preference';
   ageRange: string;
+  state: string;
   maritalStatus?: 'single' | 'married' | 'divorced' | 'prefer_not_to_say';
   religion?: string;
   preferredLocations: string[];
@@ -37,6 +38,7 @@ export class ProfileService {
       phoneNumber,
       gender,
       ageRange,
+      state,
       maritalStatus = 'single',
       religion,
       preferredLocations,
@@ -63,6 +65,7 @@ export class ProfileService {
         email,
         gender,
         age_range: ageRange,
+        state,
         marital_status: maritalStatus,
         religion,
         preferred_locations: preferredLocations,
@@ -79,7 +82,7 @@ export class ProfileService {
         referred_by_code: ambassador ? ambassador.referral_code : undefined,
       })
       .select(
-        'id, full_name, gender, age_range, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, created_at, updated_at',
+        'id, full_name, gender, age_range, state, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, created_at, updated_at',
       )
       .single();
 

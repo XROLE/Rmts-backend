@@ -218,9 +218,7 @@ export class AmbassadorService {
 
     const { data, error } = await supabase
       .from('roommate_profiles')
-      .select(
-        'id, full_name, gender, age_range, occupation, preferred_locations, budget_min, budget_max, expected_move_in_date, status, created_at',
-      )
+      .select('*')
       .eq('referred_by_code', ambassadorProfile.referral_code)
       .order('created_at', { ascending: false });
 
