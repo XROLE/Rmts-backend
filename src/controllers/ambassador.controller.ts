@@ -36,6 +36,17 @@ export const getAmbassadorProfile = asyncHandler(
   },
 );
 
+export const getAmbassadorReferrals = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const referrals = await ambassadorService.getReferrals(req.user!.id);
+    res.status(200).json({
+      success: true,
+      message: 'Referrals retrieved successfully',
+      data: { count: referrals.length, referrals },
+    });
+  },
+);
+
 export const updateAmbassadorProfile = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     const profile = await ambassadorService.updateProfile(req.user!.id, req.body);

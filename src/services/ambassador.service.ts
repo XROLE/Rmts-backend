@@ -201,6 +201,37 @@ export class AmbassadorService {
   }
 
   /**
+   * Returns every roommate profile that registered with the ambassador's
+   * referral code, newest first. Contact details (phone/email/bio) are
+   * excluded to keep roommate PII minimal.
+   */
+  async getReferrals(userId: string) {
+    const { data: ambassadorProfile, error: profileError } = await supabase
+      .from('ambassador_profiles')
+      .select('referral_code')
+      .eq('user_id', userId)
+      .single();
+
+    if (profileError || !ambassadorProfile) {
+      throw new HttpError(404, 'Ambassador profile not found');
+    }
+
+    const { data, error } = await supabase
+      .from('roommate_profiles')
+      .select(
+        'id, full_name, gender, age_range, occupation, preferred_locations, budget_min, budget_max, expected_move_in_date, status, created_at',
+      )
+      .eq('referred_by_code', ambassadorProfile.referral_code)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new HttpError(500, `Failed to fetch referrals: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  /**
    * Updates the ambassador's own profile + bank details. Verification status
    * and ambassador ranking are excluded so an ambassador cannot escalate
    * themselves; those remain admin-managed.

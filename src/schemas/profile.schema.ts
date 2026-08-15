@@ -54,7 +54,6 @@ export const createProfileSchema = z.object({
     agreedToTerms: z.literal(true, {
       errorMap: () => ({ message: 'You must agree to the terms to register' }),
     }),
-    referredByCode: z.string().max(30).optional(),
   }).refine(
     (data) => data.budgetMax >= data.budgetMin,
     {
@@ -62,6 +61,9 @@ export const createProfileSchema = z.object({
       path: ['budgetMax'],
     },
   ),
+  query: z.object({
+    ref: z.string().max(30).optional(),
+  }),
 });
 
 export type CreateProfileInput = z.infer<

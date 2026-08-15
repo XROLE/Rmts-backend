@@ -19,15 +19,18 @@ export interface CreateProfilePayload {
   sleepHabit?: string;
   personalBio?: string;
   agreedToTerms: true;
-  referredByCode?: string;
 }
 
 export class ProfileService {
   /**
    * Creates a roommate profile.
    * Registration is treated as a public self-service action with no auth user.
+   *
+   * When a referral code is supplied it is matched against ambassador
+   * referral codes. Unknown codes are silently ignored so registration
+   * never fails because of a bad code.
    */
-  async create(payload: CreateProfilePayload) {
+  async create(payload: CreateProfilePayload, referralCode?: string) {
     const {
       email,
       fullName,
@@ -46,8 +49,11 @@ export class ProfileService {
       sleepHabit,
       personalBio,
       agreedToTerms,
-      referredByCode,
     } = payload;
+
+    const ambassador = referralCode
+      ? await this.findAmbassadorByReferralCode(referralCode)
+      : null;
 
     const { data, error: insertError } = await supabase
       .from('roommate_profiles')
@@ -70,7 +76,7 @@ export class ProfileService {
         personal_bio: personalBio,
         agreed_to_terms: agreedToTerms,
         agreed_at: new Date().toISOString(),
-        referred_by_code: referredByCode,
+        referred_by_code: ambassador ? ambassador.referral_code : undefined,
       })
       .select(
         'id, full_name, gender, age_range, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, created_at, updated_at',
@@ -81,7 +87,48 @@ export class ProfileService {
       throw new HttpError(500, `Failed to create profile: ${insertError.message}`);
     }
 
+    if (ambassador) {
+      await this.incrementReferralCount(ambassador);
+    }
+
     return data;
+  }
+
+  /**
+   * Resolves a referral code to its ambassador. Codes are stored uppercase,
+   * so input is normalized before lookup. Returns null for unknown codes.
+   */
+  private async findAmbassadorByReferralCode(referralCode: string) {
+    const { data, error } = await supabase
+      .from('ambassador_profiles')
+      .select('id, referral_code, total_referrals')
+      .eq('referral_code', referralCode.toUpperCase())
+      .maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to validate referral code: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  /**
+   * Bumps the ambassador's total_referrals counter. Failures are logged but
+   * never block registration — referred_by_code on the profile is the
+   * source of truth and the counter can be backfilled.
+   */
+  private async incrementReferralCount(ambassador: {
+    id: string;
+    total_referrals: number;
+  }) {
+    const { error } = await supabase
+      .from('ambassador_profiles')
+      .update({ total_referrals: ambassador.total_referrals + 1 })
+      .eq('id', ambassador.id);
+
+    if (error) {
+      console.error('Failed to increment referral count:', error.message);
+    }
   }
 }
 

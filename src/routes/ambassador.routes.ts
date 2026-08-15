@@ -12,6 +12,7 @@ import {
 import {
   changeAmbassadorPassword,
   getAmbassadorProfile,
+  getAmbassadorReferrals,
   loginAmbassador,
   refreshAmbassadorToken,
   registerAmbassador,
@@ -45,6 +46,7 @@ router.post(
 router.use(requireAuth);
 
 router.get('/me', getAmbassadorProfile);
+router.get('/me/referrals', getAmbassadorReferrals);
 router.patch(
   '/me',
   validate(updateAmbassadorProfileSchema),

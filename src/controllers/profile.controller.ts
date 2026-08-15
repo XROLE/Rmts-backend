@@ -7,7 +7,11 @@ import { asyncHandler } from '../utils/asyncHandler.js';
  */
 export const createProfile = asyncHandler(
   async (req: Request, res: Response) => {
-    const profile = await profileService.create(req.body);
+    const ref =
+      typeof req.query.ref === 'string' && req.query.ref.trim()
+        ? req.query.ref.trim()
+        : undefined;
+    const profile = await profileService.create(req.body, ref);
     res.status(201).json({
       success: true,
       message: 'Profile created successfully',
