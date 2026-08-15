@@ -135,11 +135,13 @@ export class PaymentService {
 
     const event = JSON.parse(rawBody);
     if (event?.event !== 'charge.success') {
+      console.log('[webhook] ignored non-charge-success event:', event?.event);
       return { handled: false };
     }
 
     const reference = event?.data?.reference;
     if (!reference) {
+      console.log('[webhook] missing reference in payload');
       return { handled: false };
     }
 
@@ -155,6 +157,7 @@ export class PaymentService {
 
     // Idempotency: nothing to do if there's no matching commission or it's already paid.
     if (!commission || commission.status === 'paid') {
+      console.log('[webhook] no pending commission for reference:', reference);
       return { handled: commission ? true : false, duplicate: commission?.status === 'paid' };
     }
 

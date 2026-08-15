@@ -18,8 +18,18 @@ export const paystackWebhook = asyncHandler(
   async (req: Request, res: Response) => {
     const rawBody = (res.locals.rawBody as string | undefined) ?? '';
     const signature = req.headers['x-paystack-signature'] as string | undefined;
-    const result = await paymentService.handleWebhookEvent(rawBody, signature);
-    res.status(200).json({ success: true, ...result });
+    console.log('[webhook] received', {
+      hasSignature: Boolean(signature),
+      bodyBytes: rawBody.length,
+    });
+    try {
+      const result = await paymentService.handleWebhookEvent(rawBody, signature);
+      console.log('[webhook] outcome', result);
+      res.status(200).json({ success: true, ...result });
+    } catch (err) {
+      console.error('[webhook] failed', err);
+      throw err;
+    }
   },
 );
 
