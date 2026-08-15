@@ -7,8 +7,8 @@ import type { CreateSupportTicketInput } from '../schemas/support.schema.js';
 export class SupportService {
   /**
    * Persists a support ticket and notifies the support inbox by email.
-   * A failure to send the email does not fail the request; the ticket is
-   * still stored and returned.
+   * The email is best-effort and fire-and-forget: it never blocks or fails
+   * the request. The ticket is stored and returned immediately.
    */
   async create(userId: string, userEmail: string | undefined, input: CreateSupportTicketInput) {
     const { data: ticket, error: insertError } = await supabase
@@ -28,6 +28,17 @@ export class SupportService {
       );
     }
 
+    this.notifySupport(ticket, userEmail).catch((err) => {
+      console.error('Failed to email support ticket:', err);
+    });
+
+    return ticket;
+  }
+
+  private async notifySupport(
+    ticket: { id: string; title: string; message: string; user_id: string },
+    userEmail: string | undefined,
+  ): Promise<void> {
     try {
       await emailService.sendSupportTicket({
         title: ticket.title,
@@ -41,10 +52,8 @@ export class SupportService {
         .update({ email_sent_at: new Date().toISOString() })
         .eq('id', ticket.id);
     } catch (err) {
-      console.error('Failed to email support ticket:', err);
+      throw err;
     }
-
-    return ticket;
   }
 }
 
