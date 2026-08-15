@@ -3,6 +3,7 @@ import profileRoutes from './profile.routes.js';
 import ambassadorRoutes from './ambassador.routes.js';
 import verificationRoutes from './verification.routes.js';
 import supportRoutes from './support.routes.js';
+import paymentRoutes from './payment.routes.js';
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use('/profiles', profileRoutes);
 router.use('/ambassadors', ambassadorRoutes);
 router.use('/verification', verificationRoutes);
 router.use('/support', supportRoutes);
+router.use('/payments', paymentRoutes);
 
 export default router;

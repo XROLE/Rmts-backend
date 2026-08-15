@@ -14,6 +14,17 @@ export function createApp(): Application {
       credentials: true,
     }),
   );
+  // Preserve the raw body for the Paystack webhook so the HMAC signature can
+  // be verified against the exact bytes Paystack signed.
+  app.use(
+    '/api/v1/payments/webhook',
+    express.raw({ type: 'application/json', limit: '1mb' }),
+    (req, res, next) => {
+      res.locals.rawBody = (req.body as Buffer).toString('utf8');
+      next();
+    },
+  );
+
   app.use(express.json({ limit: '1mb' }));
 
   app.use('/api/v1', routes);
