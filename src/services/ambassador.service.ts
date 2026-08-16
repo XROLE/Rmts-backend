@@ -306,19 +306,28 @@ export class AmbassadorService {
   }
 
   /**
+   * Returns the Paystack test bank code "001" when USE_PAYSTACK_TEST_BANK is
+   * enabled, otherwise the actual bank code provided by the user.
+   */
+  private resolveBankCode(actualCode: string): string {
+    return process.env.USE_PAYSTACK_TEST_BANK === 'true' ? '001' : actualCode;
+  }
+
+  /**
    * Resolves and returns the verified account holder name for a NUBAN
    * account + bank code via Paystack. Does not persist anything.
    */
   async verifyBankDetails(userId: string, input: VerifyBankDetailsInput) {
+    const bankCode = this.resolveBankCode(input.bankCode);
     const { accountName } = await paystackService.resolveAccount({
       accountNumber: input.accountNumber,
-      bankCode: input.bankCode,
+      bankCode,
     });
 
     return {
       accountNumber: input.accountNumber,
       accountName,
-      bankCode: input.bankCode,
+      bankCode,
       ...(input.bankName !== undefined ? { bankName: input.bankName } : {}),
     };
   }
@@ -330,9 +339,10 @@ export class AmbassadorService {
    * be written.
    */
   async saveBankDetails(userId: string, input: SaveBankDetailsInput) {
+    const bankCode = this.resolveBankCode(input.bankCode);
     const { accountName } = await paystackService.resolveAccount({
       accountNumber: input.accountNumber,
-      bankCode: input.bankCode,
+      bankCode,
     });
 
     if (accountName.toLowerCase() !== input.accountName.toLowerCase()) {
@@ -345,7 +355,7 @@ export class AmbassadorService {
     const { data, error } = await supabase
       .from('ambassador_profiles')
       .update({
-        bank_code: input.bankCode,
+        bank_code: bankCode,
         bank_name: input.bankName,
         account_number: input.accountNumber,
         account_name: accountName,

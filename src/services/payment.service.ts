@@ -233,6 +233,7 @@ export class PaymentService {
       totalEarned,
       availableBalance,
       totalWithdrawn,
+      successfulPayments: paidRes.data?.length ?? 0,
       commissionPercent: COMMISSION_PERCENT,
     };
   }
