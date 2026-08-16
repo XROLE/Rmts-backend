@@ -30,7 +30,7 @@ export class PaymentService {
 
     const { data: roommate, error: roommateError } = await supabase
       .from('roommate_profiles')
-      .select('id, email, referred_by_code')
+      .select('id, email, referred_by_code, full_name, preferred_locations')
       .eq('id', roommateProfileId)
       .single();
 
@@ -90,7 +90,7 @@ export class PaymentService {
 
     const commission = commissionFor(amountNg);
 
-    const { error: commissionError } = await supabase
+    const { data: commissionRecord, error: commissionError } = await supabase
       .from('commission_earnings')
       .insert({
         ambassador_user_id: ambassador.user_id,
@@ -100,12 +100,14 @@ export class PaymentService {
         referral_code: referralCode,
         status: 'pending',
         paystack_reference: reference,
-      });
+      })
+      .select('*')
+      .single();
 
-    if (commissionError) {
+    if (commissionError || !commissionRecord) {
       throw new HttpError(
         500,
-        `Failed to record commission: ${commissionError.message}`,
+        `Failed to record commission: ${commissionError?.message}`,
       );
     }
 
@@ -118,9 +120,23 @@ export class PaymentService {
       console.error('Failed to update pending balance:', balanceError.message);
     }
 
+    const transaction = {
+      id: commissionRecord.id,
+      type: commissionRecord.status,
+      direction: 'credit',
+      amountNg: commission,
+      roommateName: roommate.full_name,
+      roommateLocation: roommate.preferred_locations,
+      description: `Commission from referral ${referralCode}`,
+      reference,
+      createdAt: commissionRecord.created_at,
+      paidAt: commissionRecord.paid_at,
+    };
+
     return {
       paymentLink,
       commission,
+      transaction,
       authorizationUrl: initialized.authorizationUrl,
     };
   }
@@ -251,11 +267,16 @@ export class PaymentService {
     const transactions: Record<string, unknown>[] = [];
 
     if (!type || type === 'paid' || type === 'pending') {
-      const { data, error } = await supabase
+      let query = supabase
         .from('commission_earnings')
         .select('id, amount_ngn, status, referral_code, paystack_reference, created_at, paid_at, roommate_profiles(full_name, preferred_locations)')
-        .eq('ambassador_user_id', userId)
-        .eq('status', type ?? 'paid');
+        .eq('ambassador_user_id', userId);
+
+      if (type) {
+        query = query.eq('status', type);
+      }
+
+      const { data, error } = await query;
       if (error) {
         throw new HttpError(500, `Failed to fetch commissions: ${error.message}`);
       }
