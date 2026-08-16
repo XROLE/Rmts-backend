@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { paystackService } from './paystack.service.js';
+import { resolveAccountNumber, resolveBankCode } from './ambassador.service.js';
 import type {
   CreatePaymentLinkInput,
   RequestWithdrawalInput,
@@ -345,8 +346,8 @@ export class PaymentService {
 
     const recipient = await paystackService.createTransferRecipient({
       name: ambassador.account_name,
-      accountNumber: ambassador.account_number,
-      bankCode: ambassador.bank_code,
+      accountNumber: resolveAccountNumber(ambassador.account_number),
+      bankCode: resolveBankCode(ambassador.bank_code),
     });
 
     const reference = randomUUID();

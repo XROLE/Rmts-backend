@@ -309,16 +309,12 @@ export class AmbassadorService {
    * Returns the Paystack test bank code "001" when USE_PAYSTACK_TEST_BANK is
    * enabled, otherwise the actual bank code provided by the user.
    */
-  private resolveBankCode(actualCode: string): string {
-    return process.env.USE_PAYSTACK_TEST_BANK === 'true' ? '001' : actualCode;
-  }
-
   /**
    * Resolves and returns the verified account holder name for a NUBAN
    * account + bank code via Paystack. Does not persist anything.
    */
   async verifyBankDetails(userId: string, input: VerifyBankDetailsInput) {
-    const bankCode = this.resolveBankCode(input.bankCode);
+    const bankCode = resolveBankCode(input.bankCode);
     const { accountName } = await paystackService.resolveAccount({
       accountNumber: input.accountNumber,
       bankCode,
@@ -339,7 +335,7 @@ export class AmbassadorService {
    * be written.
    */
   async saveBankDetails(userId: string, input: SaveBankDetailsInput) {
-    const bankCode = this.resolveBankCode(input.bankCode);
+    const bankCode = resolveBankCode(input.bankCode);
     const { accountName } = await paystackService.resolveAccount({
       accountNumber: input.accountNumber,
       bankCode,
@@ -534,3 +530,19 @@ export class AmbassadorService {
 }
 
 export const ambassadorService = new AmbassadorService();
+
+/**
+ * Returns the Paystack test bank code "001" when USE_PAYSTACK_TEST_BANK is
+ * enabled, otherwise the actual bank code provided by the user.
+ */
+export function resolveBankCode(actualCode: string): string {
+  return process.env.USE_PAYSTACK_TEST_BANK === 'true' ? '001' : actualCode;
+}
+
+/**
+ * Returns the Paystack test account number "0123456789" when
+ * USE_PAYSTACK_TEST_BANK is enabled, otherwise the actual account number.
+ */
+export function resolveAccountNumber(actualNumber: string): string {
+  return process.env.USE_PAYSTACK_TEST_BANK === 'true' ? '0123456789' : actualNumber;
+}
