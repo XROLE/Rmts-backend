@@ -85,21 +85,38 @@ export const updateAmbassadorProfileSchema = z.object({
         .optional(),
       socialMediaHandle: z.string().max(150).optional(),
       socialMediaTargetAudience: z.string().max(150).optional(),
-      bankCode: z.string().min(1).max(20).optional(),
-      bankName: z.string().min(1).max(100).optional(),
-      accountNumber: z
-        .string()
-        .regex(
-          NIGERIAN_ACCOUNT_NUMBER_REGEX,
-          'Account number must be a 10-digit NUBAN number',
-        )
-        .optional(),
-      accountName: z.string().min(1).max(100).optional(),
     })
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
       message: 'At least one field must be provided to update',
     }),
+});
+
+export const verifyBankDetailsSchema = z.object({
+  body: z.object({
+    accountNumber: z
+      .string()
+      .regex(
+        NIGERIAN_ACCOUNT_NUMBER_REGEX,
+        'Account number must be a 10-digit NUBAN number',
+      ),
+    bankCode: z.string().min(1).max(20),
+    bankName: z.string().min(1).max(100).optional(),
+  }),
+});
+
+export const saveBankDetailsSchema = z.object({
+  body: z.object({
+    accountNumber: z
+      .string()
+      .regex(
+        NIGERIAN_ACCOUNT_NUMBER_REGEX,
+        'Account number must be a 10-digit NUBAN number',
+      ),
+    bankCode: z.string().min(1).max(20),
+    bankName: z.string().min(1).max(100),
+    accountName: z.string().min(1).max(100),
+  }),
 });
 
 export const changeAmbassadorPasswordSchema = z.object({
@@ -132,6 +149,14 @@ export type UpdateAmbassadorProfileInput = z.infer<
 
 export type ChangeAmbassadorPasswordInput = z.infer<
   typeof changeAmbassadorPasswordSchema
+>['body'];
+
+export type VerifyBankDetailsInput = z.infer<
+  typeof verifyBankDetailsSchema
+>['body'];
+
+export type SaveBankDetailsInput = z.infer<
+  typeof saveBankDetailsSchema
 >['body'];
 
 export type RefreshAmbassadorTokenInput = z.infer<

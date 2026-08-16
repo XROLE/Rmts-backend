@@ -2,12 +2,15 @@ import { randomInt } from 'node:crypto';
 import type { Session } from '@supabase/supabase-js';
 import { HttpError } from '../middleware/errorHandler.js';
 import { createAnonClient, supabase } from '../config/supabase.js';
+import { paystackService } from './paystack.service.js';
 import type {
   ChangeAmbassadorPasswordInput,
   LoginAmbassadorInput,
   RefreshAmbassadorTokenInput,
   RegisterAmbassadorInput,
+  SaveBankDetailsInput,
   UpdateAmbassadorProfileInput,
+  VerifyBankDetailsInput,
 } from '../schemas/ambassador.schema.js';
 
 const REFERRAL_CODE_LENGTH = 6;
@@ -248,10 +251,6 @@ export class AmbassadorService {
       socialMediaPlatform,
       socialMediaHandle,
       socialMediaTargetAudience,
-      bankCode,
-      bankName,
-      accountNumber,
-      accountName,
     } = payload;
 
     const profileUpdate: Record<string, unknown> = {};
@@ -266,10 +265,6 @@ export class AmbassadorService {
     if (socialMediaPlatform !== undefined) profileUpdate.social_media_platform = socialMediaPlatform;
     if (socialMediaHandle !== undefined) profileUpdate.social_media_handle = socialMediaHandle;
     if (socialMediaTargetAudience !== undefined) profileUpdate.social_media_target_audience = socialMediaTargetAudience;
-    if (bankCode !== undefined) profileUpdate.bank_code = bankCode;
-    if (bankName !== undefined) profileUpdate.bank_name = bankName;
-    if (accountNumber !== undefined) profileUpdate.account_number = accountNumber;
-    if (accountName !== undefined) profileUpdate.account_name = accountName;
 
     const { data, error } = await supabase
       .from('ambassador_profiles')
@@ -305,6 +300,62 @@ export class AmbassadorService {
           throw new HttpError(500, `Failed to update user metadata: ${metaError.message}`);
         }
       }
+    }
+
+    return data;
+  }
+
+  /**
+   * Resolves and returns the verified account holder name for a NUBAN
+   * account + bank code via Paystack. Does not persist anything.
+   */
+  async verifyBankDetails(userId: string, input: VerifyBankDetailsInput) {
+    const { accountName } = await paystackService.resolveAccount({
+      accountNumber: input.accountNumber,
+      bankCode: input.bankCode,
+    });
+
+    return {
+      accountNumber: input.accountNumber,
+      accountName,
+      bankCode: input.bankCode,
+      ...(input.bankName !== undefined ? { bankName: input.bankName } : {}),
+    };
+  }
+
+  /**
+   * Re-verifies the bank details against Paystack and, only when the resolved
+   * account holder name matches the submitted account name, persists the bank
+   * fields to the ambassador's profile. Ensures unverified details can never
+   * be written.
+   */
+  async saveBankDetails(userId: string, input: SaveBankDetailsInput) {
+    const { accountName } = await paystackService.resolveAccount({
+      accountNumber: input.accountNumber,
+      bankCode: input.bankCode,
+    });
+
+    if (accountName.toLowerCase() !== input.accountName.toLowerCase()) {
+      throw new HttpError(
+        400,
+        'Account name does not match the name on the bank account. Please check and retry.',
+      );
+    }
+
+    const { data, error } = await supabase
+      .from('ambassador_profiles')
+      .update({
+        bank_code: input.bankCode,
+        bank_name: input.bankName,
+        account_number: input.accountNumber,
+        account_name: accountName,
+      })
+      .eq('user_id', userId)
+      .select(PROFILE_SELECT)
+      .single();
+
+    if (error) {
+      throw new HttpError(500, `Failed to save bank details: ${error.message}`);
     }
 
     return data;

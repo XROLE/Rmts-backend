@@ -58,6 +58,28 @@ export const updateAmbassadorProfile = asyncHandler(
   },
 );
 
+export const verifyAmbassadorBank = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const data = await ambassadorService.verifyBankDetails(req.user!.id, req.body);
+    res.status(200).json({
+      success: true,
+      message: 'Bank account verified successfully',
+      data,
+    });
+  },
+);
+
+export const saveAmbassadorBank = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const profile = await ambassadorService.saveBankDetails(req.user!.id, req.body);
+    res.status(200).json({
+      success: true,
+      message: 'Bank details saved successfully',
+      data: profile,
+    });
+  },
+);
+
 export const changeAmbassadorPassword = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     const result = await ambassadorService.changePassword(

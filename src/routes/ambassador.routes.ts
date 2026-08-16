@@ -7,7 +7,9 @@ import {
   loginAmbassadorSchema,
   refreshAmbassadorTokenSchema,
   registerAmbassadorSchema,
+  saveBankDetailsSchema,
   updateAmbassadorProfileSchema,
+  verifyBankDetailsSchema,
 } from '../schemas/ambassador.schema.js';
 import {
   changeAmbassadorPassword,
@@ -16,8 +18,10 @@ import {
   loginAmbassador,
   refreshAmbassadorToken,
   registerAmbassador,
+  saveAmbassadorBank,
   updateAmbassadorProfile,
   uploadAmbassadorProfilePicture,
+  verifyAmbassadorBank,
 } from '../controllers/ambassador.controller.js';
 
 const router = Router();
@@ -58,5 +62,15 @@ router.post(
   changeAmbassadorPassword,
 );
 router.post('/me/picture', upload.single('file'), uploadAmbassadorProfilePicture);
+router.post(
+  '/me/bank/verify',
+  validate(verifyBankDetailsSchema),
+  verifyAmbassadorBank,
+);
+router.post(
+  '/me/bank',
+  validate(saveBankDetailsSchema),
+  saveAmbassadorBank,
+);
 
 export default router;

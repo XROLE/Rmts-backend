@@ -157,6 +157,31 @@ export class PaystackService {
   }
 
   /**
+   * Resolves a Nigerian bank account via Paystack's NUBAN verification to
+   * confirm the account holder name before bank details are persisted.
+   */
+  async resolveAccount(input: {
+    accountNumber: string;
+    bankCode: string;
+  }): Promise<{ accountName: string; accountNumber: string; bankId: number }> {
+    const query = new URLSearchParams({
+      account_number: input.accountNumber,
+      bank_code: input.bankCode,
+    });
+    const data = await request<{
+      account_name: string;
+      account_number: string;
+      bank_id: number;
+    }>(`/bank/resolve?${query.toString()}`);
+
+    return {
+      accountName: data.account_name,
+      accountNumber: data.account_number,
+      bankId: data.bank_id,
+    };
+  }
+
+  /**
    * Verifies a Paystack webhook by computing the HMAC-SHA512 signature over
    * the raw body and comparing it with the x-paystack-signature header.
    */
