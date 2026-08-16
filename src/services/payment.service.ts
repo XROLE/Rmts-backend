@@ -253,17 +253,24 @@ export class PaymentService {
     if (!type || type === 'paid' || type === 'pending') {
       const { data, error } = await supabase
         .from('commission_earnings')
-        .select('*')
+        .select('id, amount_ngn, status, referral_code, paystack_reference, created_at, paid_at, roommate_profiles(full_name, preferred_locations)')
         .eq('ambassador_user_id', userId)
         .eq('status', type ?? 'paid');
       if (error) {
         throw new HttpError(500, `Failed to fetch commissions: ${error.message}`);
       }
       for (const c of data ?? []) {
+        const roommateRow = c.roommate_profiles as unknown as
+          | { full_name?: string; preferred_locations?: string[] }
+          | Array<{ full_name?: string; preferred_locations?: string[] }>;
+        const roommate = Array.isArray(roommateRow) ? roommateRow[0] : roommateRow;
         transactions.push({
           id: c.id,
           type: c.status,
+          direction: 'credit',
           amountNg: c.amount_ngn,
+          roommateName: roommate?.full_name,
+          roommateLocation: roommate?.preferred_locations,
           description: `Commission from referral ${c.referral_code}`,
           reference: c.paystack_reference,
           createdAt: c.created_at,
@@ -284,7 +291,10 @@ export class PaymentService {
         transactions.push({
           id: w.id,
           type: 'withdrawal',
+          direction: 'debit',
           amountNg: w.amount_ngn,
+          roommateName: null,
+          roommateLocation: null,
           description: `Withdrawal to ${w.bank_name ?? 'bank'}`,
           status: w.status,
           reference: w.reference,
