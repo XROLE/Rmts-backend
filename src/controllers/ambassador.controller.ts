@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { ambassadorService } from '../services/ambassador.service.js';
+import { paystackService } from '../services/paystack.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 
@@ -54,6 +55,17 @@ export const updateAmbassadorProfile = asyncHandler(
       success: true,
       message: 'Profile updated successfully',
       data: profile,
+    });
+  },
+);
+
+export const getAmbassadorBanks = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const banks = await paystackService.getBanks();
+    res.status(200).json({
+      success: true,
+      message: 'Banks retrieved successfully',
+      data: banks,
     });
   },
 );

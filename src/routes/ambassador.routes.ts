@@ -13,6 +13,7 @@ import {
 } from '../schemas/ambassador.schema.js';
 import {
   changeAmbassadorPassword,
+  getAmbassadorBanks,
   getAmbassadorProfile,
   getAmbassadorReferrals,
   loginAmbassador,
@@ -45,6 +46,9 @@ router.post(
   validate(refreshAmbassadorTokenSchema),
   refreshAmbassadorToken,
 );
+
+// Public: list supported Nigerian banks for the bank-selection UI.
+router.get('/banks', getAmbassadorBanks);
 
 // Authenticated routes — require a valid Supabase access token.
 router.use(requireAuth);

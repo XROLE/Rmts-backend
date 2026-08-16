@@ -157,6 +157,23 @@ export class PaystackService {
   }
 
   /**
+   * Returns the list of supported Nigerian banks from Paystack. Each bank's
+   * `code` is the `bank_code` expected by `resolveAccount` and transfer
+   * recipient creation.
+   */
+  async getBanks(): Promise<Array<{ code: string; name: string; id: number }>> {
+    const data = await request<
+      Array<{ code: string; name: string; id: number }>
+    >('/bank?currency=NGN');
+
+    return data.map((bank) => ({
+      code: bank.code,
+      name: bank.name,
+      id: bank.id,
+    }));
+  }
+
+  /**
    * Resolves a Nigerian bank account via Paystack's NUBAN verification to
    * confirm the account holder name before bank details are persisted.
    */
