@@ -1,9 +1,7 @@
 export const WEIGHTS = {
-  location: 25,
-  state: 15,
-  budget: 20,
+  location: 35,
+  budget: 35,
   moveIn: 10,
-  gender: 10,
   religion: 5,
   occupation: 5,
   smoking: 5,
@@ -11,8 +9,6 @@ export const WEIGHTS = {
 } as const;
 
 export interface MatchableProfile {
-  gender?: string | null;
-  state?: string | null;
   religion?: string | null;
   preferredLocations?: string[] | null;
   budgetMin?: number | null;
@@ -25,10 +21,8 @@ export interface MatchableProfile {
 
 export interface MatchBreakdown {
   location: number;
-  state: number;
   budget: number;
   moveIn: number;
-  gender: number;
   religion: number;
   occupation: number;
   smoking: number;
@@ -44,10 +38,6 @@ function locationOverlap(a: MatchableProfile, b: MatchableProfile): number {
   return shareAtLeastOne(a.preferredLocations, b.preferredLocations)
     ? WEIGHTS.location
     : 0;
-}
-
-function stateMatch(a: MatchableProfile, b: MatchableProfile): number {
-  return a.state && b.state && a.state === b.state ? WEIGHTS.state : 0;
 }
 
 function budgetOverlap(a: MatchableProfile, b: MatchableProfile): number {
@@ -76,17 +66,8 @@ function moveInProximity(a: MatchableProfile, b: MatchableProfile): number {
   if (!Number.isFinite(diffDays)) return 0;
   if (diffDays > 60) return 0;
 
-  const ratio = Math.max(0, (60 - diffDays) / (60 - 7));
+  const ratio = Math.min(1, Math.max(0, (60 - diffDays) / (60 - 7)));
   return Math.round(WEIGHTS.moveIn * ratio * 100) / 100;
-}
-
-function genderMatch(a: MatchableProfile, b: MatchableProfile): number {
-  if (!a.gender || !b.gender) return 0;
-  if (a.gender === b.gender) return WEIGHTS.gender;
-  if (a.gender === 'no_preference' || b.gender === 'no_preference') {
-    return WEIGHTS.gender / 2;
-  }
-  return 0;
 }
 
 function religionMatch(a: MatchableProfile, b: MatchableProfile): number {
@@ -125,10 +106,8 @@ export function computeMatchScore(
 ): { score: number; breakdown: MatchBreakdown } {
   const breakdown: MatchBreakdown = {
     location: locationOverlap(a, b),
-    state: stateMatch(a, b),
     budget: budgetOverlap(a, b),
     moveIn: moveInProximity(a, b),
-    gender: genderMatch(a, b),
     religion: religionMatch(a, b),
     occupation: occupationMatch(a, b),
     smoking: smokingMatch(a, b),

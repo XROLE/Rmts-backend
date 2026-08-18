@@ -27,8 +27,6 @@ export const PROFILE_SELECT =
 
 function toMatchable(row: RoommateProfileRow) {
   return {
-    gender: row.gender,
-    state: row.state,
     religion: row.religion,
     preferredLocations: row.preferred_locations,
     budgetMin: row.budget_min,
