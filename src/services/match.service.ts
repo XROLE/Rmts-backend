@@ -42,16 +42,18 @@ function toMatchable(row: RoommateProfileRow) {
 
 export class MatchService {
   /**
-   * Computes a compatibility score for every unordered pair of active
-   * roommate profiles, sorts them by score (desc), and returns a paginated
-   * slice of pairs. All-pairs is computed in memory, so this is best suited
+   * Computes a compatibility score for every unordered pair of new/rematch
+   * roommate profiles, then builds a disjoint set of pairs where each user is
+   * matched at most once (greedy by highest score). Returns a paginated slice
+   * of those pairs. All scores are computed in memory, so this is best suited
    * to a few hundred profiles.
    */
   async listMatches(limit: number, offset: number) {
     const { data, error } = await supabase
       .from('roommate_profiles')
       .select(PROFILE_SELECT)
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .in('status', ['new', 'rematch']);
 
     if (error) {
       throw new HttpError(500, `Failed to fetch profiles for matching: ${error.message}`);
@@ -61,18 +63,32 @@ export class MatchService {
       RoommateProfileRow & Record<string, unknown>
     >;
 
-    const pairs: MatchPair[] = [];
+    const candidates: { score: number; breakdown: MatchBreakdown; a: number; b: number }[] = [];
 
     for (let i = 0; i < profiles.length; i++) {
       for (let j = i + 1; j < profiles.length; j++) {
         const a = profiles[i];
         const b = profiles[j];
         const { score, breakdown } = computeMatchScore(toMatchable(a), toMatchable(b));
-        pairs.push({ score, breakdown, profiles: [a, b] });
+        candidates.push({ score, breakdown, a: i, b: j });
       }
     }
 
-    pairs.sort((x, y) => y.score - x.score);
+    candidates.sort((x, y) => y.score - x.score);
+
+    const taken = new Set<number>();
+    const pairs: MatchPair[] = [];
+
+    for (const candidate of candidates) {
+      if (taken.has(candidate.a) || taken.has(candidate.b)) continue;
+      taken.add(candidate.a);
+      taken.add(candidate.b);
+      pairs.push({
+        score: candidate.score,
+        breakdown: candidate.breakdown,
+        profiles: [profiles[candidate.a], profiles[candidate.b]],
+      });
+    }
 
     return {
       pairs: pairs.slice(offset, offset + limit),
