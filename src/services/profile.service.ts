@@ -98,6 +98,37 @@ export class ProfileService {
   }
 
   /**
+   * Returns all roommate profiles, newest first, paginated. Admin-only.
+   */
+  async listAll(limit: number, offset: number) {
+    const select =
+      'id, full_name, phone_number, email, gender, age_range, state, marital_status, religion, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, smoking_habit, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, agreed_to_terms, created_at, updated_at';
+
+    const [listResult, countResult] = await Promise.all([
+      supabase
+        .from('roommate_profiles')
+        .select(select)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1),
+      supabase
+        .from('roommate_profiles')
+        .select('id', { count: 'exact', head: true }),
+    ]);
+
+    if (listResult.error) {
+      throw new HttpError(500, `Failed to fetch users: ${listResult.error.message}`);
+    }
+    if (countResult.error) {
+      throw new HttpError(500, `Failed to count users: ${countResult.error.message}`);
+    }
+
+    return {
+      items: listResult.data ?? [],
+      total: countResult.count ?? 0,
+    };
+  }
+
+  /**
    * Resolves a referral code to its ambassador. Codes are stored uppercase,
    * so input is normalized before lookup. Returns null for unknown codes.
    */
