@@ -188,6 +188,40 @@ export class AmbassadorService {
   }
 
   /**
+   * Returns all ambassador profiles, newest first, paginated. Admin-only.
+   */
+  async listAll(limit: number, offset: number) {
+    const [listResult, countResult] = await Promise.all([
+      supabase
+        .from('ambassador_profiles')
+        .select(PROFILE_SELECT)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1),
+      supabase
+        .from('ambassador_profiles')
+        .select('id', { count: 'exact', head: true }),
+    ]);
+
+    if (listResult.error) {
+      throw new HttpError(
+        500,
+        `Failed to fetch ambassadors: ${listResult.error.message}`,
+      );
+    }
+    if (countResult.error) {
+      throw new HttpError(
+        500,
+        `Failed to count ambassadors: ${countResult.error.message}`,
+      );
+    }
+
+    return {
+      items: listResult.data ?? [],
+      total: countResult.count ?? 0,
+    };
+  }
+
+  /**
    * Returns the ambassador's own profile by user_id.
    */
   async getProfile(userId: string) {

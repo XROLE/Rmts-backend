@@ -2,8 +2,10 @@ import { Router } from 'express';
 import multer from 'multer';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireAdmin } from '../middleware/requireAdmin.js';
 import {
   changeAmbassadorPasswordSchema,
+  getAllAmbassadorsSchema,
   loginAmbassadorSchema,
   refreshAmbassadorTokenSchema,
   registerAmbassadorSchema,
@@ -13,6 +15,7 @@ import {
 } from '../schemas/ambassador.schema.js';
 import {
   changeAmbassadorPassword,
+  getAllAmbassadors,
   getAmbassadorBanks,
   getAmbassadorProfile,
   getAmbassadorReferrals,
@@ -55,6 +58,14 @@ router.use(requireAuth);
 
 router.get('/me', getAmbassadorProfile);
 router.get('/me/referrals', getAmbassadorReferrals);
+
+// Admin-only: paginated list of all ambassador profiles.
+router.get(
+  '/',
+  requireAdmin,
+  validate(getAllAmbassadorsSchema),
+  getAllAmbassadors,
+);
 router.patch(
   '/me',
   validate(updateAmbassadorProfileSchema),
