@@ -500,7 +500,7 @@ export class PaymentService {
     const { data: profiles, error: profileError } = userIds.length
       ? await supabase
           .from('ambassador_profiles')
-          .select('user_id, referral_code, user:users!user_id(id, full_name, email)')
+          .select('user_id, referral_code, available_balance_ngn, user:users!user_id(id, full_name, email)')
           .in('user_id', userIds)
       : { data: [], error: null };
 
