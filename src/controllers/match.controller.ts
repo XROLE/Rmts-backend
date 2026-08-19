@@ -18,3 +18,15 @@ export const getMatches = asyncHandler(
     });
   },
 );
+
+export const createMatch = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { roommateProfileAId, roommateProfileBId } = req.body;
+    const result = await matchService.confirmMatch(roommateProfileAId, roommateProfileBId);
+    res.status(201).json({
+      success: true,
+      message: 'Match confirmed successfully',
+      data: result,
+    });
+  },
+);

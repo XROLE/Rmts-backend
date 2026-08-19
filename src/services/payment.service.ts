@@ -3,6 +3,7 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { paystackService } from './paystack.service.js';
 import { resolveAccountNumber, resolveBankCode } from './ambassador.service.js';
+import { matchService } from './match.service.js';
 import type {
   CreatePaymentLinkInput,
   RequestWithdrawalInput,
@@ -24,6 +25,8 @@ export class PaymentService {
   /**
    * Resolves the roommate's ambassador from their referral code and issues a
    * Paystack payment link. A pending commission is recorded immediately.
+   * The roommate must have an active match; the link records the match and
+   * the matched partner so the pairing is visible from the record.
    */
   async createPaymentLink(userId: string, input: CreatePaymentLinkInput) {
     const { roommateProfileId, amountNg } = input;
@@ -37,6 +40,25 @@ export class PaymentService {
     if (roommateError || !roommate) {
       throw new HttpError(404, 'Roommate profile not found');
     }
+
+    const match = await matchService.getActiveMatchForProfile(roommateProfileId);
+    if (!match) {
+      throw new HttpError(
+        409,
+        'Roommate has no active match. Confirm a match before generating a payment link.',
+      );
+    }
+
+    const matchedRoommateProfileId =
+      match.roommate_profile_a_id === roommateProfileId
+        ? match.roommate_profile_b_id
+        : match.roommate_profile_a_id;
+
+    const { data: matchedRoommate } = await supabase
+      .from('roommate_profiles')
+      .select('id, full_name')
+      .eq('id', matchedRoommateProfileId)
+      .maybeSingle();
 
     const referralCode = roommate.referred_by_code;
     if (!referralCode) {
@@ -66,6 +88,8 @@ export class PaymentService {
         referral_code: referralCode,
         roommate_profile_id: roommateProfileId,
         ambassador_user_id: ambassador.user_id,
+        match_id: match.id,
+        matched_roommate_profile_id: matchedRoommateProfileId,
       },
     });
 
@@ -79,6 +103,8 @@ export class PaymentService {
         paystack_reference: reference,
         paystack_access_code: initialized.accessCode,
         paystack_authorization_url: initialized.authorizationUrl,
+        match_id: match.id,
+        matched_roommate_profile_id: matchedRoommateProfileId,
         status: 'pending',
       })
       .select('*')
@@ -120,6 +146,17 @@ export class PaymentService {
       console.error('Failed to update pending balance:', balanceError.message);
     }
 
+    // Move the paying roommate along the lifecycle: matched -> pending_payment.
+    const { error: statusError } = await supabase
+      .from('roommate_profiles')
+      .update({ status: 'pending_payment' })
+      .eq('id', roommateProfileId)
+      .eq('status', 'matched');
+
+    if (statusError) {
+      console.error('Failed to update roommate status:', statusError.message);
+    }
+
     const transaction = {
       id: commissionRecord.id,
       type: commissionRecord.status,
@@ -138,6 +175,11 @@ export class PaymentService {
       commission,
       transaction,
       authorizationUrl: initialized.authorizationUrl,
+      matchedRoommate: {
+        id: matchedRoommateProfileId,
+        fullName: matchedRoommate?.full_name ?? null,
+      },
+      matchId: match.id,
     };
   }
 
