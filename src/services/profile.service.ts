@@ -98,6 +98,58 @@ export class ProfileService {
   }
 
   /**
+   * Returns admin dashboard profile metrics across the four lifecycle states:
+   * all profiles, new (unmatched), pending payment, and fully connected (paid).
+   * All values are exact head-counts against roommate_profiles.
+   */
+  async getDashboardStats() {
+    const [totalRes, newRes, pendingPaymentRes, connectedRes] =
+      await Promise.all([
+        supabase
+          .from('roommate_profiles')
+          .select('id', { count: 'exact', head: true }),
+        supabase
+          .from('roommate_profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'new'),
+        supabase
+          .from('roommate_profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending_payment'),
+        supabase
+          .from('roommate_profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'paid'),
+      ]);
+
+    if (totalRes.error) {
+      throw new HttpError(500, `Failed to count profiles: ${totalRes.error.message}`);
+    }
+    if (newRes.error) {
+      throw new HttpError(500, `Failed to count new profiles: ${newRes.error.message}`);
+    }
+    if (pendingPaymentRes.error) {
+      throw new HttpError(
+        500,
+        `Failed to count pending payments: ${pendingPaymentRes.error.message}`,
+      );
+    }
+    if (connectedRes.error) {
+      throw new HttpError(
+        500,
+        `Failed to count connected profiles: ${connectedRes.error.message}`,
+      );
+    }
+
+    return {
+      totalProfiles: totalRes.count ?? 0,
+      totalNewProfiles: newRes.count ?? 0,
+      totalPendingPayments: pendingPaymentRes.count ?? 0,
+      totalConnectedProfiles: connectedRes.count ?? 0,
+    };
+  }
+
+  /**
    * Returns all roommate profiles, newest first, paginated. Admin-only.
    */
   async listAll(limit: number, offset: number) {

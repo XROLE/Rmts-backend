@@ -21,6 +21,17 @@ export const createProfile = asyncHandler(
   },
 );
 
+export const getProfileStats = asyncHandler(
+  async (_req: AuthenticatedRequest, res: Response) => {
+    const data = await profileService.getDashboardStats();
+    res.status(200).json({
+      success: true,
+      message: 'Profile stats retrieved successfully',
+      data,
+    });
+  },
+);
+
 export const getAllUsers = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     const limit = Number(req.query.limit ?? 20);

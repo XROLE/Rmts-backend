@@ -6,12 +6,16 @@ import { createProfileSchema, getAllUsersSchema } from '../schemas/profile.schem
 import {
   createProfile,
   getAllUsers,
+  getProfileStats,
 } from '../controllers/profile.controller.js';
 
 const router = Router();
 
 // Public: profile creation (registration without auth credentials).
 router.post('/', validate(createProfileSchema), createProfile);
+
+// Admin-only: dashboard profile lifecycle metrics.
+router.get('/stats', requireAuth, requireAdmin, getProfileStats);
 
 // Admin-only: paginated list of all roommate profiles.
 router.get(
