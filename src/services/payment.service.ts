@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { paystackService } from './paystack.service.js';
-import { resolveAccountNumber, resolveBankCode } from './ambassador.service.js';
 import { matchService } from './match.service.js';
 import type {
   ConfirmWithdrawalInput,
@@ -397,7 +396,7 @@ export class PaymentService {
 
     const { data: ambassador, error: profileError } = await supabase
       .from('ambassador_profiles')
-      .select('id, bank_code, bank_name, account_number, account_name, available_balance_ngn, total_withdrawn_ngn')
+      .select('id, bank_code, bank_name, account_number, account_name, paystack_recipient_code, available_balance_ngn, total_withdrawn_ngn')
       .eq('user_id', userId)
       .single();
 
@@ -416,15 +415,16 @@ export class PaymentService {
       );
     }
 
+    if (!ambassador.paystack_recipient_code) {
+      throw new HttpError(
+        500,
+        'Withdrawal recipient is not set up. Please re-save your bank details.',
+      );
+    }
+
     if (amountNg > ambassador.available_balance_ngn) {
       throw new HttpError(400, 'Insufficient available balance');
     }
-
-    const recipient = await paystackService.createTransferRecipient({
-      name: ambassador.account_name,
-      accountNumber: resolveAccountNumber(ambassador.account_number),
-      bankCode: resolveBankCode(ambassador.bank_code),
-    });
 
     const reference = randomUUID();
 
@@ -438,7 +438,7 @@ export class PaymentService {
         bank_name: ambassador.bank_name,
         account_number: ambassador.account_number,
         account_name: ambassador.account_name,
-        paystack_recipient_code: recipient.recipientCode,
+        paystack_recipient_code: ambassador.paystack_recipient_code,
         reference,
       })
       .select('*')
@@ -522,16 +522,31 @@ export class PaymentService {
     let transferCode = withdrawal.paystack_transfer_code as string | null;
 
     if (!transferCode) {
-      if (!withdrawal.paystack_recipient_code) {
-        throw new HttpError(
-          400,
-          'Withdrawal has no transfer recipient; it cannot be approved',
-        );
+      let recipientCode = withdrawal.paystack_recipient_code as string | null;
+
+      if (!recipientCode) {
+        // Legacy pre-migration withdrawals: no recipient stored. Create one on
+        // the fly from the bank details captured at request time.
+        const recipient = await paystackService.createTransferRecipient({
+          name: withdrawal.account_name,
+          accountNumber: withdrawal.account_number,
+          bankCode: withdrawal.bank_code,
+        });
+        recipientCode = recipient.recipientCode;
+
+        const { error: recError } = await supabase
+          .from('withdrawals')
+          .update({ paystack_recipient_code: recipientCode })
+          .eq('id', withdrawal.id);
+
+        if (recError) {
+          console.error('Failed to store recipient code:', recError.message);
+        }
       }
 
       const transfer = await paystackService.initiateTransfer({
         amountKobo: nairaToKobo(Number(withdrawal.amount_ngn)),
-        recipientCode: withdrawal.paystack_recipient_code,
+        recipientCode,
         reference: withdrawal.reference ?? undefined,
       });
       transferCode = transfer.transferCode;
