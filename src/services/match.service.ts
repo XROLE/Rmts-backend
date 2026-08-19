@@ -1,6 +1,6 @@
 import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
-import { computeMatchScore, MatchBreakdown } from './matchScoring.js';
+import { computeMatchScore, isEligiblePair, MatchBreakdown } from './matchScoring.js';
 
 interface RoommateProfileRow {
   id: string;
@@ -27,6 +27,8 @@ export const PROFILE_SELECT =
 
 function toMatchable(row: RoommateProfileRow) {
   return {
+    gender: row.gender,
+    state: row.state,
     religion: row.religion,
     preferredLocations: row.preferred_locations,
     budgetMin: row.budget_min,
@@ -67,7 +69,10 @@ export class MatchService {
       for (let j = i + 1; j < profiles.length; j++) {
         const a = profiles[i];
         const b = profiles[j];
-        const { score, breakdown } = computeMatchScore(toMatchable(a), toMatchable(b));
+        const matchA = toMatchable(a);
+        const matchB = toMatchable(b);
+        if (!isEligiblePair(matchA, matchB)) continue;
+        const { score, breakdown } = computeMatchScore(matchA, matchB);
         candidates.push({ score, breakdown, a: i, b: j });
       }
     }

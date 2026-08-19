@@ -9,6 +9,8 @@ export const WEIGHTS = {
 } as const;
 
 export interface MatchableProfile {
+  gender?: string | null;
+  state?: string | null;
   religion?: string | null;
   preferredLocations?: string[] | null;
   budgetMin?: number | null;
@@ -27,6 +29,22 @@ export interface MatchBreakdown {
   occupation: number;
   smoking: number;
   pets: number;
+}
+
+/**
+ * Hard eligibility gate: two profiles may only be matched when they share the
+ * exact same gender and the same state. State is free-text in the DB, so it
+ * is normalized (trim + lowercase) before comparison. Missing values on
+ * either side make the pair ineligible (fail-closed).
+ */
+export function isEligiblePair(a: MatchableProfile, b: MatchableProfile): boolean {
+  if (!a.gender || !b.gender || a.gender !== b.gender) return false;
+
+  const aState = a.state?.trim().toLowerCase();
+  const bState = b.state?.trim().toLowerCase();
+  if (!aState || !bState || aState !== bState) return false;
+
+  return true;
 }
 
 function shareAtLeastOne(a: string[] | null | undefined, b: string[] | null | undefined): boolean {
