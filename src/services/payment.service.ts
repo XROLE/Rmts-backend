@@ -13,6 +13,7 @@ import type {
 const COMMISSION_PERCENT = Number(process.env.COMMISSION_PERCENT ?? 10);
 const MIN_WITHDRAWAL_AMOUNT = Number(process.env.MIN_WITHDRAWAL_AMOUNT ?? 1000);
 const PAYMENT_RETURN_URL = process.env.PAYMENT_RETURN_URL;
+const SIMULATE_TRANSFERS = process.env.SIMULATE_PAYSTACK_TRANSFERS === 'true';
 
 function commissionFor(amountNg: number): number {
   return Number(((amountNg * COMMISSION_PERCENT) / 100).toFixed(2));
@@ -665,6 +666,43 @@ export class PaymentService {
       await this.refundWithdrawalBalance(withdrawal);
 
       return rejected;
+    }
+
+    if (SIMULATE_TRANSFERS) {
+      // Starter businesses cannot fire live transfers. Simulate a successful
+      // payout when the Paystack wallet covers the amount; otherwise leave the
+      // withdrawal pending so the admin can top up and retry.
+      const balances = await paystackService.getBalance();
+      const ngnBalance =
+        balances.find((b) => b.currency === 'NGN') ?? balances[0] ?? null;
+
+      if (!ngnBalance || ngnBalance.balanceNgn < Number(withdrawal.amount_ngn)) {
+        throw new HttpError(
+          400,
+          'Insufficient Paystack wallet balance to approve this withdrawal',
+        );
+      }
+
+      const { data: simulated, error: simulateError } = await supabase
+        .from('withdrawals')
+        .update({
+          status: 'paid',
+          processed_at: new Date().toISOString(),
+          paystack_transfer_code: `SIMULATED-${withdrawal.reference ?? withdrawal.id}`,
+        })
+        .eq('id', withdrawal.id)
+        .eq('status', 'pending')
+        .select('*')
+        .single();
+
+      if (simulateError || !simulated) {
+        throw new HttpError(
+          500,
+          `Failed to mark withdrawal as paid: ${simulateError?.message ?? 'unknown error'}`,
+        );
+      }
+
+      return simulated;
     }
 
     // Approve path: fire the transfer once, then read Paystack's status.
