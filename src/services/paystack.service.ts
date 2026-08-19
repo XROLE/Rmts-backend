@@ -4,6 +4,13 @@ import { HttpError } from '../middleware/errorHandler.js';
 
 const PAYSTACK_BASE_URL = process.env.PAYSTACK_BASE_URL ?? 'https://api.paystack.co';
 
+if (process.env.NODE_ENV !== 'production') {
+  const key = process.env.PAYSTACK_SECRET_KEY ?? '';
+  console.log(
+    `[paystack:env] base=${PAYSTACK_BASE_URL} key=${key.slice(0, 8)}... mode=${key.startsWith('sk_live_') ? 'LIVE' : 'test'}`,
+  );
+}
+
 function secretKey(): string {
   const key = process.env.PAYSTACK_SECRET_KEY;
   if (!key) {
@@ -232,17 +239,31 @@ export class PaystackService {
       account_number: input.accountNumber,
       bank_code: input.bankCode,
     });
-    const data = await request<{
-      account_name: string;
-      account_number: string;
-      bank_id: number;
-    }>(`/bank/resolve?${query.toString()}`);
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        console.log(`[paystack:resolve] attempt ${attempt}`, query.toString());
+        const data = await request<{
+          account_name: string;
+          account_number: string;
+          bank_id: number;
+        }>(`/bank/resolve?${query.toString()}`);
 
-    return {
-      accountName: data.account_name,
-      accountNumber: data.account_number,
-      bankId: data.bank_id,
-    };
+        return {
+          accountName: data.account_name,
+          accountNumber: data.account_number,
+          bankId: data.bank_id,
+        };
+      } catch (err) {
+        const retryable =
+          err instanceof HttpError &&
+          err.statusCode === 502 &&
+          err.message.includes('Cannot resolve account') &&
+          attempt < MAX_ATTEMPTS;
+        if (!retryable) throw err;
+        await new Promise((r) => setTimeout(r, 400 * attempt));
+      }
+    }
   }
 
   /**

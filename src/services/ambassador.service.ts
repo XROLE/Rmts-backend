@@ -346,10 +346,6 @@ export class AmbassadorService {
   }
 
   /**
-   * Returns the Paystack test bank code "001" when USE_PAYSTACK_TEST_BANK is
-   * enabled, otherwise the actual bank code provided by the user.
-   */
-  /**
    * Resolves and returns the verified account holder name for a NUBAN
    * account + bank code via Paystack. Does not persist anything.
    */
@@ -381,7 +377,8 @@ export class AmbassadorService {
       bankCode,
     });
 
-    if (accountName.toLowerCase() !== input.accountName.toLowerCase()) {
+    const isTestMode = process.env.USE_PAYSTACK_TEST_BANK === 'true';
+    if (!isTestMode && accountName.toLowerCase() !== input.accountName.toLowerCase()) {
       throw new HttpError(
         400,
         'Account name does not match the name on the bank account. Please check and retry.',
@@ -579,17 +576,19 @@ export class AmbassadorService {
 export const ambassadorService = new AmbassadorService();
 
 /**
- * Returns the Paystack test bank code "001" when USE_PAYSTACK_TEST_BANK is
- * enabled, otherwise the actual bank code provided by the user.
+ * Returns the actual bank code provided by the user. In test mode
+ * (USE_PAYSTACK_TEST_BANK=true) Paystack's fake "Test Bank" (001) cannot
+ * create transfer recipients, so we always pass through the real bank code.
  */
 export function resolveBankCode(actualCode: string): string {
-  return process.env.USE_PAYSTACK_TEST_BANK === 'true' ? '001' : actualCode;
+  return actualCode;
 }
 
 /**
- * Returns the Paystack test account number "0123456789" when
- * USE_PAYSTACK_TEST_BANK is enabled, otherwise the actual account number.
+ * Returns the actual account number provided by the user. In test mode
+ * (USE_PAYSTACK_TEST_BANK=true) Paystack's fake bank account cannot create
+ * transfer recipients, so we always pass through the real account number.
  */
 export function resolveAccountNumber(actualNumber: string): string {
-  return process.env.USE_PAYSTACK_TEST_BANK === 'true' ? '0123456789' : actualNumber;
+  return actualNumber;
 }
