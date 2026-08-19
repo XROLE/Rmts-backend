@@ -19,6 +19,7 @@ import {
   getAmbassadorBanks,
   getAmbassadorProfile,
   getAmbassadorReferrals,
+  getAmbassadorStats,
   loginAmbassador,
   refreshAmbassadorToken,
   registerAmbassador,
@@ -58,6 +59,9 @@ router.use(requireAuth);
 
 router.get('/me', getAmbassadorProfile);
 router.get('/me/referrals', getAmbassadorReferrals);
+
+// Admin-only: dashboard ambassador metrics.
+router.get('/stats', requireAdmin, getAmbassadorStats);
 
 // Admin-only: paginated list of all ambassador profiles.
 router.get(

@@ -15,6 +15,17 @@ export const registerAmbassador = asyncHandler(
   },
 );
 
+export const getAmbassadorStats = asyncHandler(
+  async (_req: AuthenticatedRequest, res: Response) => {
+    const data = await ambassadorService.getDashboardStats();
+    res.status(200).json({
+      success: true,
+      message: 'Ambassador stats retrieved successfully',
+      data,
+    });
+  },
+);
+
 export const getAllAmbassadors = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     const limit = Number(req.query.limit ?? 20);

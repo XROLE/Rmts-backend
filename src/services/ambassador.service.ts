@@ -194,6 +194,95 @@ export class AmbassadorService {
   }
 
   /**
+   * Returns admin dashboard ambassador metrics: ambassador counts, referral
+   * volume, payout statuses, and verification pipeline state. All counts are
+   * exact head-counts; referrals use the denormalized total_referrals column.
+   */
+  async getDashboardStats() {
+    const [
+      totalRes,
+      unverifiedRes,
+      verificationPendingRes,
+      paidPayoutRes,
+      pendingPayoutRes,
+      referralsRes,
+    ] = await Promise.all([
+      supabase
+        .from('ambassador_profiles')
+        .select('id', { count: 'exact', head: true }),
+      supabase
+        .from('ambassador_profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('verification_status', 'unverified'),
+      supabase
+        .from('ambassador_profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('verification_status', 'pending'),
+      supabase
+        .from('withdrawals')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'paid'),
+      supabase
+        .from('withdrawals')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['pending', 'processing']),
+      supabase.from('ambassador_profiles').select('total_referrals'),
+    ]);
+
+    if (totalRes.error) {
+      throw new HttpError(
+        500,
+        `Failed to count ambassadors: ${totalRes.error.message}`,
+      );
+    }
+    if (unverifiedRes.error) {
+      throw new HttpError(
+        500,
+        `Failed to count unverified ambassadors: ${unverifiedRes.error.message}`,
+      );
+    }
+    if (verificationPendingRes.error) {
+      throw new HttpError(
+        500,
+        `Failed to count pending verification requests: ${verificationPendingRes.error.message}`,
+      );
+    }
+    if (paidPayoutRes.error) {
+      throw new HttpError(
+        500,
+        `Failed to count paid payouts: ${paidPayoutRes.error.message}`,
+      );
+    }
+    if (pendingPayoutRes.error) {
+      throw new HttpError(
+        500,
+        `Failed to count pending payouts: ${pendingPayoutRes.error.message}`,
+      );
+    }
+    if (referralsRes.error) {
+      throw new HttpError(
+        500,
+        `Failed to fetch referral totals: ${referralsRes.error.message}`,
+      );
+    }
+
+    const totalReferrals =
+      referralsRes.data?.reduce(
+        (sum, row) => sum + Number(row.total_referrals ?? 0),
+        0,
+      ) ?? 0;
+
+    return {
+      totalAmbassadors: totalRes.count ?? 0,
+      totalReferrals,
+      totalPendingPayouts: pendingPayoutRes.count ?? 0,
+      totalPayoutsPaid: paidPayoutRes.count ?? 0,
+      unverifiedAmbassadors: unverifiedRes.count ?? 0,
+      verificationRequestsPending: verificationPendingRes.count ?? 0,
+    };
+  }
+
+  /**
    * Returns all ambassador profiles, newest first, paginated. Admin-only.
    */
   async listAll(limit: number, offset: number) {
