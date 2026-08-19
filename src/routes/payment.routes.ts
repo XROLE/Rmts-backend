@@ -5,6 +5,7 @@ import { requireAdmin } from '../middleware/requireAdmin.js';
 import {
   createPaymentLinkSchema,
   getTransactionsSchema,
+  confirmWithdrawalSchema,
   requestWithdrawalSchema,
 } from '../schemas/payment.schema.js';
 import {
@@ -14,6 +15,7 @@ import {
   getPaystackBalance,
   paystackWebhook,
   requestWithdrawal,
+  confirmWithdrawal,
 } from '../controllers/payment.controller.js';
 
 const router = Router();
@@ -32,5 +34,14 @@ router.post('/', validate(createPaymentLinkSchema), createPaymentLink);
 router.get('/summary', getPaymentSummary);
 router.get('/transactions', validate(getTransactionsSchema), getPaymentTransactions);
 router.post('/withdrawals', validate(requestWithdrawalSchema), requestWithdrawal);
+
+// Admin only: approve (fires the Paystack transfer) or reject a pending
+// ambassador withdrawal.
+router.patch(
+  '/withdrawals/:id/confirm',
+  requireAdmin,
+  validate(confirmWithdrawalSchema),
+  confirmWithdrawal,
+);
 
 export default router;

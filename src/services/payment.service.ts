@@ -5,6 +5,7 @@ import { paystackService } from './paystack.service.js';
 import { resolveAccountNumber, resolveBankCode } from './ambassador.service.js';
 import { matchService } from './match.service.js';
 import type {
+  ConfirmWithdrawalInput,
   CreatePaymentLinkInput,
   RequestWithdrawalInput,
 } from '../schemas/payment.schema.js';
@@ -379,8 +380,10 @@ export class PaymentService {
   }
 
   /**
-   * Requests a payout from the ambassador's available balance to their saved
-   * bank account via Paystack. Deducts the balance and records a withdrawal.
+   * Requests a payout from the ambassador's available balance. Records a
+   * pending withdrawal (with the transfer recipient pre-created) and deducts
+   * the balance to lock the funds. No money moves until an admin confirms
+   * the withdrawal via confirmWithdrawal.
    */
   async requestWithdrawal(userId: string, input: RequestWithdrawalInput) {
     const { amountNg } = input;
@@ -424,11 +427,6 @@ export class PaymentService {
     });
 
     const reference = randomUUID();
-    const transfer = await paystackService.initiateTransfer({
-      amountKobo: nairaToKobo(amountNg),
-      recipientCode: recipient.recipientCode,
-      reference,
-    });
 
     const { data: withdrawal, error: insertError } = await supabase
       .from('withdrawals')
@@ -441,8 +439,7 @@ export class PaymentService {
         account_number: ambassador.account_number,
         account_name: ambassador.account_name,
         paystack_recipient_code: recipient.recipientCode,
-        paystack_transfer_code: transfer.transferCode,
-        reference: transfer.reference,
+        reference,
       })
       .select('*')
       .single();
@@ -467,6 +464,177 @@ export class PaymentService {
     }
 
     return withdrawal;
+  }
+
+  /**
+   * Admin confirmation of a pending withdrawal. 'approve' initiates the
+   * Paystack transfer (idempotently — never twice for the same withdrawal)
+   * and marks the withdrawal paid/failed from Paystack's transfer status.
+   * 'reject' marks it failed without touching Paystack. Failures refund the
+   * ambassador's balance.
+   */
+  async confirmWithdrawal(withdrawalId: string, input: ConfirmWithdrawalInput) {
+    const { action } = input;
+
+    const { data: withdrawal, error: fetchError } = await supabase
+      .from('withdrawals')
+      .select('*')
+      .eq('id', withdrawalId)
+      .maybeSingle();
+
+    if (fetchError) {
+      throw new HttpError(500, `Failed to fetch withdrawal: ${fetchError.message}`);
+    }
+
+    if (!withdrawal) {
+      throw new HttpError(404, 'Withdrawal not found');
+    }
+
+    if (withdrawal.status !== 'pending') {
+      throw new HttpError(
+        409,
+        `Withdrawal has already been processed (status: ${withdrawal.status})`,
+      );
+    }
+
+    if (action === 'reject') {
+      const { data: rejected, error: rejectError } = await supabase
+        .from('withdrawals')
+        .update({ status: 'failed', processed_at: new Date().toISOString() })
+        .eq('id', withdrawal.id)
+        .eq('status', 'pending')
+        .select('*')
+        .single();
+
+      if (rejectError || !rejected) {
+        throw new HttpError(
+          500,
+          `Failed to reject withdrawal: ${rejectError?.message ?? 'unknown error'}`,
+        );
+      }
+
+      await this.refundWithdrawalBalance(withdrawal);
+
+      return rejected;
+    }
+
+    // Approve path: fire the transfer once, then read Paystack's status.
+    let transferCode = withdrawal.paystack_transfer_code as string | null;
+
+    if (!transferCode) {
+      if (!withdrawal.paystack_recipient_code) {
+        throw new HttpError(
+          400,
+          'Withdrawal has no transfer recipient; it cannot be approved',
+        );
+      }
+
+      const transfer = await paystackService.initiateTransfer({
+        amountKobo: nairaToKobo(Number(withdrawal.amount_ngn)),
+        recipientCode: withdrawal.paystack_recipient_code,
+        reference: withdrawal.reference ?? undefined,
+      });
+      transferCode = transfer.transferCode;
+
+      const { error: codeError } = await supabase
+        .from('withdrawals')
+        .update({ paystack_transfer_code: transferCode })
+        .eq('id', withdrawal.id);
+
+      if (codeError) {
+        console.error('Failed to store transfer code:', codeError.message);
+      }
+    }
+
+    const transferStatus = await paystackService.fetchTransfer(transferCode);
+
+    if (transferStatus.status === 'success') {
+      const { data: paid, error: paidError } = await supabase
+        .from('withdrawals')
+        .update({ status: 'paid', processed_at: new Date().toISOString() })
+        .eq('id', withdrawal.id)
+        .eq('status', 'pending')
+        .select('*')
+        .single();
+
+      if (paidError || !paid) {
+        throw new HttpError(
+          500,
+          `Failed to mark withdrawal as paid: ${paidError?.message ?? 'unknown error'}`,
+        );
+      }
+
+      return paid;
+    }
+
+    if (transferStatus.status === 'failed' || transferStatus.status === 'reversed') {
+      const { data: failed, error: failError } = await supabase
+        .from('withdrawals')
+        .update({ status: 'failed', processed_at: new Date().toISOString() })
+        .eq('id', withdrawal.id)
+        .eq('status', 'pending')
+        .select('*')
+        .single();
+
+      if (failError || !failed) {
+        throw new HttpError(
+          500,
+          `Failed to mark withdrawal as failed: ${failError?.message ?? 'unknown error'}`,
+        );
+      }
+
+      await this.refundWithdrawalBalance(withdrawal);
+
+      return failed;
+    }
+
+    // Paystack is still processing the transfer; leave the withdrawal pending
+    // so the admin can retry confirmation later.
+    const { data: current } = await supabase
+      .from('withdrawals')
+      .select('*')
+      .eq('id', withdrawal.id)
+      .single();
+
+    return current ?? withdrawal;
+  }
+
+  /**
+   * Returns a withdrawal's amount to the ambassador's available balance.
+   * Only safe to call while the withdrawal is still 'pending' (callers guard
+   * on status) so it can never run twice for the same withdrawal.
+   */
+  private async refundWithdrawalBalance(withdrawal: {
+    ambassador_user_id: string;
+    amount_ngn: number | string;
+  }) {
+    const amountNg = Number(withdrawal.amount_ngn);
+
+    const { data: ambassador, error: profileError } = await supabase
+      .from('ambassador_profiles')
+      .select('id, available_balance_ngn, total_withdrawn_ngn')
+      .eq('user_id', withdrawal.ambassador_user_id)
+      .single();
+
+    if (profileError || !ambassador) {
+      console.error(
+        'Failed to load ambassador profile for withdrawal refund:',
+        profileError?.message,
+      );
+      return;
+    }
+
+    const { error: refundError } = await supabase
+      .from('ambassador_profiles')
+      .update({
+        available_balance_ngn: ambassador.available_balance_ngn + amountNg,
+        total_withdrawn_ngn: Math.max(0, ambassador.total_withdrawn_ngn - amountNg),
+      })
+      .eq('id', ambassador.id);
+
+    if (refundError) {
+      console.error('Failed to refund balance after withdrawal failure:', refundError.message);
+    }
   }
 }
 

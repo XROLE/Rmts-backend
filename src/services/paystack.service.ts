@@ -59,6 +59,13 @@ export interface TransferRecipientResult {
 export interface TransferResult {
   transferCode: string;
   reference: string;
+  status: string;
+}
+
+export interface FetchTransferResult {
+  transferCode: string;
+  reference: string;
+  status: string;
 }
 
 export class PaystackService {
@@ -143,6 +150,7 @@ export class PaystackService {
     const data = await request<{
       transfer_code: string;
       reference: string;
+      status: string;
     }>('/transfer', {
       method: 'POST',
       body: JSON.stringify({
@@ -153,7 +161,29 @@ export class PaystackService {
       }),
     });
 
-    return { transferCode: data.transfer_code, reference: data.reference };
+    return {
+      transferCode: data.transfer_code,
+      reference: data.reference,
+      status: data.status,
+    };
+  }
+
+  /**
+   * Fetches a transfer by its transfer code (or id) to read its current
+   * status ("success", "failed", "pending", "reversed", etc.).
+   */
+  async fetchTransfer(transferCode: string): Promise<FetchTransferResult> {
+    const data = await request<{
+      transfer_code: string;
+      reference: string;
+      status: string;
+    }>(`/transfer/${encodeURIComponent(transferCode)}`);
+
+    return {
+      transferCode: data.transfer_code,
+      reference: data.reference,
+      status: data.status,
+    };
   }
 
   /**

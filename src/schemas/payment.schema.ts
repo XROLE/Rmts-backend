@@ -27,6 +27,17 @@ export const getTransactionsSchema = z.object({
   }),
 });
 
+export const confirmWithdrawalSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('A valid withdrawal ID is required'),
+  }),
+  body: z.object({
+    action: z.enum(['approve', 'reject'], {
+      errorMap: () => ({ message: "Action must be 'approve' or 'reject'" }),
+    }),
+  }),
+});
+
 export type CreatePaymentLinkInput = z.infer<
   typeof createPaymentLinkSchema
 >['body'];
@@ -38,3 +49,7 @@ export type RequestWithdrawalInput = z.infer<
 export type GetTransactionsInput = z.infer<
   typeof getTransactionsSchema
 >['query'];
+
+export type ConfirmWithdrawalInput = z.infer<
+  typeof confirmWithdrawalSchema
+>['body'];

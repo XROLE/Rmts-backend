@@ -81,3 +81,20 @@ export const requestWithdrawal = asyncHandler(
     });
   },
 );
+
+export const confirmWithdrawal = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const data = await paymentService.confirmWithdrawal(
+      req.params.id,
+      req.body,
+    );
+    res.status(200).json({
+      success: true,
+      message:
+        data.status === 'pending'
+          ? 'Withdrawal is still processing at Paystack'
+          : `Withdrawal ${data.status === 'paid' ? 'approved' : 'failed'} successfully`,
+      data,
+    });
+  },
+);
