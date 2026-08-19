@@ -356,7 +356,7 @@ export class AmbassadorService {
   async verifyBankDetails(userId: string, input: VerifyBankDetailsInput) {
     const bankCode = resolveBankCode(input.bankCode);
     const { accountName } = await paystackService.resolveAccount({
-      accountNumber: input.accountNumber,
+      accountNumber: resolveAccountNumber(input.accountNumber),
       bankCode,
     });
 
@@ -377,7 +377,7 @@ export class AmbassadorService {
   async saveBankDetails(userId: string, input: SaveBankDetailsInput) {
     const bankCode = resolveBankCode(input.bankCode);
     const { accountName } = await paystackService.resolveAccount({
-      accountNumber: input.accountNumber,
+      accountNumber: resolveAccountNumber(input.accountNumber),
       bankCode,
     });
 
@@ -390,7 +390,7 @@ export class AmbassadorService {
 
     const { recipientCode } = await paystackService.createTransferRecipient({
       name: accountName,
-      accountNumber: input.accountNumber,
+      accountNumber: resolveAccountNumber(input.accountNumber),
       bankCode,
     });
 
