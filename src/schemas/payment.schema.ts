@@ -38,9 +38,18 @@ export const confirmWithdrawalSchema = z.object({
   }),
 });
 
+export const rejectWithdrawalSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('A valid withdrawal ID is required'),
+  }),
+  body: z.object({
+    reason: z.string().min(1, 'A rejection reason is required'),
+  }),
+});
+
 export const getAllPaymentRequestsSchema = z.object({
   query: z.object({
-    status: z.enum(['pending', 'paid', 'failed']).optional(),
+    status: z.enum(['pending', 'paid', 'failed', 'rejected']).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(20),
     offset: z.coerce.number().int().min(0).default(0),
   }),
@@ -60,6 +69,10 @@ export type GetTransactionsInput = z.infer<
 
 export type ConfirmWithdrawalInput = z.infer<
   typeof confirmWithdrawalSchema
+>['body'];
+
+export type RejectWithdrawalInput = z.infer<
+  typeof rejectWithdrawalSchema
 >['body'];
 
 export type GetAllPaymentRequestsInput = z.infer<

@@ -130,3 +130,14 @@ export const confirmWithdrawal = asyncHandler(
     });
   },
 );
+
+export const rejectWithdrawal = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const data = await paymentService.rejectWithdrawal(req.params.id, req.body);
+    res.status(200).json({
+      success: true,
+      message: 'Withdrawal rejected successfully',
+      data,
+    });
+  },
+);

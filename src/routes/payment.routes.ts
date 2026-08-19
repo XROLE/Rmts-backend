@@ -7,6 +7,7 @@ import {
   getTransactionsSchema,
   confirmWithdrawalSchema,
   getAllPaymentRequestsSchema,
+  rejectWithdrawalSchema,
   requestWithdrawalSchema,
 } from '../schemas/payment.schema.js';
 import {
@@ -19,6 +20,7 @@ import {
   paystackWebhook,
   requestWithdrawal,
   confirmWithdrawal,
+  rejectWithdrawal,
 } from '../controllers/payment.controller.js';
 
 const router = Router();
@@ -56,6 +58,15 @@ router.patch(
   requireAdmin,
   validate(confirmWithdrawalSchema),
   confirmWithdrawal,
+);
+
+// Admin only: reject a pending ambassador withdrawal, recording the reason and
+// refunding the ambassador's locked balance. No Paystack transfer is fired.
+router.patch(
+  '/withdrawals/:id/reject',
+  requireAdmin,
+  validate(rejectWithdrawalSchema),
+  rejectWithdrawal,
 );
 
 export default router;

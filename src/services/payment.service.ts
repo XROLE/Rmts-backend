@@ -6,6 +6,7 @@ import { matchService } from './match.service.js';
 import type {
   ConfirmWithdrawalInput,
   CreatePaymentLinkInput,
+  RejectWithdrawalInput,
   RequestWithdrawalInput,
 } from '../schemas/payment.schema.js';
 
@@ -760,6 +761,60 @@ export class PaymentService {
       .single();
 
     return current ?? withdrawal;
+  }
+
+  /**
+   * Admin rejection of a pending withdrawal. Marks the withdrawal 'rejected',
+   * records the reason, and refunds the ambassador's locked balance. Only a
+   * still-pending withdrawal can be rejected, so the refund can never run
+   * twice for the same withdrawal.
+   */
+  async rejectWithdrawal(withdrawalId: string, input: RejectWithdrawalInput) {
+    const { reason } = input;
+
+    const { data: withdrawal, error: fetchError } = await supabase
+      .from('withdrawals')
+      .select('*')
+      .eq('id', withdrawalId)
+      .maybeSingle();
+
+    if (fetchError) {
+      throw new HttpError(500, `Failed to fetch withdrawal: ${fetchError.message}`);
+    }
+
+    if (!withdrawal) {
+      throw new HttpError(404, 'Withdrawal not found');
+    }
+
+    if (withdrawal.status !== 'pending') {
+      throw new HttpError(
+        409,
+        `Withdrawal has already been processed (status: ${withdrawal.status})`,
+      );
+    }
+
+    const { data: rejected, error: rejectError } = await supabase
+      .from('withdrawals')
+      .update({
+        status: 'rejected',
+        processed_at: new Date().toISOString(),
+        rejection_reason: reason,
+      })
+      .eq('id', withdrawal.id)
+      .eq('status', 'pending')
+      .select('*')
+      .single();
+
+    if (rejectError || !rejected) {
+      throw new HttpError(
+        500,
+        `Failed to reject withdrawal: ${rejectError?.message ?? 'unknown error'}`,
+      );
+    }
+
+    await this.refundWithdrawalBalance(withdrawal);
+
+    return rejected;
   }
 
   /**
