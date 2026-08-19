@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { paymentService } from '../services/payment.service.js';
+import { paystackService } from '../services/paystack.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 
@@ -54,6 +55,17 @@ export const getPaymentTransactions = asyncHandler(
     res.status(200).json({
       success: true,
       message: 'Transactions retrieved successfully',
+      data,
+    });
+  },
+);
+
+export const getPaystackBalance = asyncHandler(
+  async (_req: AuthenticatedRequest, res: Response) => {
+    const data = await paystackService.getBalance();
+    res.status(200).json({
+      success: true,
+      message: 'Paystack balance retrieved successfully',
       data,
     });
   },

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireAdmin } from '../middleware/requireAdmin.js';
 import {
   createPaymentLinkSchema,
   getTransactionsSchema,
@@ -10,6 +11,7 @@ import {
   createPaymentLink,
   getPaymentSummary,
   getPaymentTransactions,
+  getPaystackBalance,
   paystackWebhook,
   requestWithdrawal,
 } from '../controllers/payment.controller.js';
@@ -22,6 +24,9 @@ router.post('/webhook', paystackWebhook);
 
 // Authenticated routes.
 router.use(requireAuth);
+
+// Admin only: current Paystack wallet balance (funds ambassador payouts).
+router.get('/balance', requireAdmin, getPaystackBalance);
 
 router.post('/', validate(createPaymentLinkSchema), createPaymentLink);
 router.get('/summary', getPaymentSummary);

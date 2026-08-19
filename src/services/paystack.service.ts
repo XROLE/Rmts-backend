@@ -157,6 +157,23 @@ export class PaystackService {
   }
 
   /**
+   * Returns the current Paystack wallet balance(s). Paystack reports amounts
+   * in kobo, so both the raw kobo value and the NGN equivalent are returned.
+   * This balance funds ambassador payouts (transfers use source: 'balance').
+   */
+  async getBalance(): Promise<
+    Array<{ currency: string; balanceKobo: number; balanceNgn: number }>
+  > {
+    const data = await request<Array<{ currency: string; balance: number }>>('/balance');
+
+    return data.map((entry) => ({
+      currency: entry.currency,
+      balanceKobo: entry.balance,
+      balanceNgn: entry.balance / 100,
+    }));
+  }
+
+  /**
    * Returns the list of supported Nigerian banks from Paystack. Each bank's
    * `code` is the `bank_code` expected by `resolveAccount` and transfer
    * recipient creation.
