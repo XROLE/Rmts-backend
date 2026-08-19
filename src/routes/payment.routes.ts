@@ -6,12 +6,14 @@ import {
   createPaymentLinkSchema,
   getTransactionsSchema,
   confirmWithdrawalSchema,
+  getAllPaymentRequestsSchema,
   requestWithdrawalSchema,
 } from '../schemas/payment.schema.js';
 import {
   createPaymentLink,
   getPaymentSummary,
   getPaymentTransactions,
+  getAllPaymentRequests,
   getPaystackBalance,
   paystackWebhook,
   requestWithdrawal,
@@ -29,6 +31,14 @@ router.use(requireAuth);
 
 // Admin only: current Paystack wallet balance (funds ambassador payouts).
 router.get('/balance', requireAdmin, getPaystackBalance);
+
+// Admin only: paginated list of all ambassador withdrawal (payment) requests.
+router.get(
+  '/requests',
+  requireAdmin,
+  validate(getAllPaymentRequestsSchema),
+  getAllPaymentRequests,
+);
 
 router.post('/', validate(createPaymentLinkSchema), createPaymentLink);
 router.get('/summary', getPaymentSummary);

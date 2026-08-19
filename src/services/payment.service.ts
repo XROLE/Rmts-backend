@@ -379,6 +379,84 @@ export class PaymentService {
   }
 
   /**
+   * Returns all ambassador withdrawal (payment) requests, newest first,
+   * paginated. Optionally filters by status. Admin-only.
+   */
+  async listPaymentRequests(
+    limit: number,
+    offset: number,
+    status?: 'pending' | 'paid' | 'failed',
+  ) {
+    const WITHDRAWAL_SELECT =
+      'id, ambassador_user_id, amount_ngn, status, bank_code, bank_name, account_number, account_name, paystack_recipient_code, paystack_transfer_code, reference, created_at, processed_at';
+
+    let listQuery = supabase
+      .from('withdrawals')
+      .select(WITHDRAWAL_SELECT)
+      .order('created_at', { ascending: false });
+
+    let countQuery = supabase
+      .from('withdrawals')
+      .select('id', { count: 'exact', head: true });
+
+    if (status) {
+      listQuery = listQuery.eq('status', status);
+      countQuery = countQuery.eq('status', status);
+    }
+
+    const [listResult, countResult] = await Promise.all([
+      listQuery.range(offset, offset + limit - 1),
+      countQuery,
+    ]);
+
+    if (listResult.error) {
+      throw new HttpError(
+        500,
+        `Failed to fetch payment requests: ${listResult.error.message}`,
+      );
+    }
+    if (countResult.error) {
+      throw new HttpError(
+        500,
+        `Failed to count payment requests: ${countResult.error.message}`,
+      );
+    }
+
+    const withdrawals = listResult.data ?? [];
+    const userIds = [
+      ...new Set(withdrawals.map((w) => w.ambassador_user_id).filter(Boolean)),
+    ];
+
+    const { data: profiles, error: profileError } = userIds.length
+      ? await supabase
+          .from('ambassador_profiles')
+          .select('user_id, referral_code, user:users!user_id(id, full_name, email)')
+          .in('user_id', userIds)
+      : { data: [], error: null };
+
+    if (profileError) {
+      throw new HttpError(
+        500,
+        `Failed to fetch ambassador profiles: ${profileError.message}`,
+      );
+    }
+
+    const profileByUserId = new Map(
+      (profiles ?? []).map((p) => [p.user_id, p]),
+    );
+
+    const items = withdrawals.map((w) => ({
+      ...w,
+      ambassador: profileByUserId.get(w.ambassador_user_id) ?? null,
+    }));
+
+    return {
+      items,
+      total: countResult.count ?? 0,
+    };
+  }
+
+  /**
    * Requests a payout from the ambassador's available balance. Records a
    * pending withdrawal (with the transfer recipient pre-created) and deducts
    * the balance to lock the funds. No money moves until an admin confirms

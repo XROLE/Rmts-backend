@@ -38,6 +38,14 @@ export const confirmWithdrawalSchema = z.object({
   }),
 });
 
+export const getAllPaymentRequestsSchema = z.object({
+  query: z.object({
+    status: z.enum(['pending', 'paid', 'failed']).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    offset: z.coerce.number().int().min(0).default(0),
+  }),
+});
+
 export type CreatePaymentLinkInput = z.infer<
   typeof createPaymentLinkSchema
 >['body'];
@@ -53,3 +61,7 @@ export type GetTransactionsInput = z.infer<
 export type ConfirmWithdrawalInput = z.infer<
   typeof confirmWithdrawalSchema
 >['body'];
+
+export type GetAllPaymentRequestsInput = z.infer<
+  typeof getAllPaymentRequestsSchema
+>['query'];

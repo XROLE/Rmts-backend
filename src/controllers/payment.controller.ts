@@ -60,6 +60,27 @@ export const getPaymentTransactions = asyncHandler(
   },
 );
 
+export const getAllPaymentRequests = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const limit = Number(req.query.limit ?? 20);
+    const offset = Number(req.query.offset ?? 0);
+    const status = req.query.status as 'pending' | 'paid' | 'failed' | undefined;
+    const { items, total } = await paymentService.listPaymentRequests(
+      limit,
+      offset,
+      status,
+    );
+    res.status(200).json({
+      success: true,
+      message: 'Payment requests retrieved successfully',
+      data: {
+        items,
+        pagination: { total, limit, offset },
+      },
+    });
+  },
+);
+
 export const getPaystackBalance = asyncHandler(
   async (_req: AuthenticatedRequest, res: Response) => {
     const data = await paystackService.getBalance();
