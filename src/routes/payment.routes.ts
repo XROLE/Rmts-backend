@@ -15,6 +15,7 @@ import {
   getPaymentTransactions,
   getAllPaymentRequests,
   getPaystackBalance,
+  getAdminOverview,
   paystackWebhook,
   requestWithdrawal,
   confirmWithdrawal,
@@ -31,6 +32,9 @@ router.use(requireAuth);
 
 // Admin only: current Paystack wallet balance (funds ambassador payouts).
 router.get('/balance', requireAdmin, getPaystackBalance);
+
+// Admin only: dashboard finance overview (live balance + ledger aggregates).
+router.get('/overview', requireAdmin, getAdminOverview);
 
 // Admin only: paginated list of all ambassador withdrawal (payment) requests.
 router.get(

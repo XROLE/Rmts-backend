@@ -298,6 +298,76 @@ export class PaymentService {
   }
 
   /**
+   * Returns admin dashboard finance metrics: the live Paystack balance plus
+   * ledger-derived aggregates (all-time, in NGN). All values are computed
+   * from the ledgers (authoritative) rather than denormalized columns.
+   */
+  async getAdminOverview() {
+    const [balanceRes, revenueRes, commissionRes, withdrawalRes] =
+      await Promise.all([
+        paystackService.getBalance(),
+        supabase
+          .from('payment_links')
+          .select('amount_ngn')
+          .eq('status', 'paid'),
+        supabase
+          .from('commission_earnings')
+          .select('amount_ngn')
+          .in('status', ['pending', 'paid']),
+        supabase
+          .from('withdrawals')
+          .select('amount_ngn, ambassador_user_id')
+          .in('status', ['pending', 'processing']),
+      ]);
+
+    if (revenueRes.error) {
+      throw new HttpError(
+        500,
+        `Failed to fetch revenue: ${revenueRes.error.message}`,
+      );
+    }
+    if (commissionRes.error) {
+      throw new HttpError(
+        500,
+        `Failed to fetch commissions: ${commissionRes.error.message}`,
+      );
+    }
+    if (withdrawalRes.error) {
+      throw new HttpError(
+        500,
+        `Failed to fetch pending withdrawals: ${withdrawalRes.error.message}`,
+      );
+    }
+
+    const totalGrossRevenue =
+      revenueRes.data?.reduce((s, r) => s + Number(r.amount_ngn), 0) ?? 0;
+    const totalCommissions =
+      commissionRes.data?.reduce((s, r) => s + Number(r.amount_ngn), 0) ?? 0;
+    const pendingWithdrawals = withdrawalRes.data ?? [];
+    const totalPendingPayout = pendingWithdrawals.reduce(
+      (s, r) => s + Number(r.amount_ngn),
+      0,
+    );
+    const pendingAmbassadorCount = new Set(
+      pendingWithdrawals.map((r) => r.ambassador_user_id).filter(Boolean),
+    ).size;
+
+    const netPlatformEarnings = totalGrossRevenue - totalCommissions;
+
+    const ngnBalance =
+      balanceRes.find((b) => b.currency === 'NGN') ?? balanceRes[0] ?? null;
+
+    return {
+      paystackBalance: ngnBalance,
+      totalGrossRevenue,
+      totalCommissions,
+      totalPendingPayout,
+      pendingAmbassadorCount,
+      netPlatformEarnings,
+    };
+  }
+
+  /**
    * Returns the ambassador's recent transaction history. Commissions appear
    * as 'paid' or 'pending'; withdrawals appear as 'withdrawal'. Newest first.
    */

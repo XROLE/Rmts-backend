@@ -92,6 +92,17 @@ export const getPaystackBalance = asyncHandler(
   },
 );
 
+export const getAdminOverview = asyncHandler(
+  async (_req: AuthenticatedRequest, res: Response) => {
+    const data = await paymentService.getAdminOverview();
+    res.status(200).json({
+      success: true,
+      message: 'Financial overview retrieved successfully',
+      data,
+    });
+  },
+);
+
 export const requestWithdrawal = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     const data = await paymentService.requestWithdrawal(req.user!.id, req.body);
