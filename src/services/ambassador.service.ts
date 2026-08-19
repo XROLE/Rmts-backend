@@ -19,6 +19,12 @@ const REFERRAL_MAX_ATTEMPTS = 10;
 const PROFILE_SELECT =
   'id, user_id, referral_code, total_referrals, total_earnings_ngn, pending_balance_ngn, available_balance_ngn, total_withdrawn_ngn, bank_code, bank_name, account_number, account_name, campus_or_region, is_approved, profile_picture_url, verification_status, ambassador_ranking, state_covering, emergency_contact, audience_category, institution_or_organization, primary_operating, secondary_operating, social_media_platform, social_media_handle, social_media_target_audience, created_at, updated_at';
 
+/**
+ * Admin list select: everything in PROFILE_SELECT plus the ambassador's full
+ * public.users identity row, nested under `user` (via the user_id FK).
+ */
+const ADMIN_LIST_SELECT = `${PROFILE_SELECT}, user:users!user_id(*)`;
+
 export class AmbassadorService {
   /**
    * Generates a short, human-friendly referral code (e.g. "JANE84") and
@@ -194,7 +200,7 @@ export class AmbassadorService {
     const [listResult, countResult] = await Promise.all([
       supabase
         .from('ambassador_profiles')
-        .select(PROFILE_SELECT)
+        .select(ADMIN_LIST_SELECT)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1),
       supabase
