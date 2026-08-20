@@ -7,6 +7,7 @@ import {
   changeAmbassadorPasswordSchema,
   confirmAmbassadorApprovalSchema,
   getAllAmbassadorsSchema,
+  getAmbassadorPayoutsSchema,
   loginAmbassadorSchema,
   refreshAmbassadorTokenSchema,
   registerAmbassadorSchema,
@@ -19,6 +20,7 @@ import {
   confirmAmbassadorApproval,
   getAllAmbassadors,
   getAmbassadorBanks,
+  getAmbassadorPayouts,
   getAmbassadorProfile,
   getAmbassadorReferrals,
   getAmbassadorStats,
@@ -61,6 +63,11 @@ router.use(requireAuth);
 
 router.get('/me', getAmbassadorProfile);
 router.get('/me/referrals', getAmbassadorReferrals);
+router.get(
+  '/me/payouts',
+  validate(getAmbassadorPayoutsSchema),
+  getAmbassadorPayouts,
+);
 
 // Admin-only: dashboard ambassador metrics.
 router.get('/stats', requireAdmin, getAmbassadorStats);

@@ -142,6 +142,14 @@ export const getAllAmbassadorsSchema = z.object({
   }),
 });
 
+export const getAmbassadorPayoutsSchema = z.object({
+  query: z.object({
+    status: z.enum(['pending', 'paid', 'failed', 'rejected']).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    offset: z.coerce.number().int().min(0).default(0),
+  }),
+});
+
 export const confirmAmbassadorApprovalSchema = z.object({
   params: z.object({
     id: z.string().uuid('A valid ambassador profile ID is required'),
@@ -191,6 +199,10 @@ export type SaveBankDetailsInput = z.infer<
 export type RefreshAmbassadorTokenInput = z.infer<
   typeof refreshAmbassadorTokenSchema
 >['body'];
+
+export type GetAmbassadorPayoutsInput = z.infer<
+  typeof getAmbassadorPayoutsSchema
+>['query'];
 
 export type ConfirmAmbassadorApprovalInput = z.infer<
   typeof confirmAmbassadorApprovalSchema

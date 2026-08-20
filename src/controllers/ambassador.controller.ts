@@ -88,6 +88,32 @@ export const getAmbassadorReferrals = asyncHandler(
   },
 );
 
+export const getAmbassadorPayouts = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const limit = Number(req.query.limit ?? 20);
+    const offset = Number(req.query.offset ?? 0);
+    const status = req.query.status as
+      | 'pending'
+      | 'paid'
+      | 'failed'
+      | 'rejected'
+      | undefined;
+    const { items, total } = await ambassadorService.getPayouts(req.user!.id, {
+      status,
+      limit,
+      offset,
+    });
+    res.status(200).json({
+      success: true,
+      message: 'Payouts retrieved successfully',
+      data: {
+        items,
+        pagination: { total, limit, offset },
+      },
+    });
+  },
+);
+
 export const updateAmbassadorProfile = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     const profile = await ambassadorService.updateProfile(req.user!.id, req.body);

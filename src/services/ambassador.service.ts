@@ -5,6 +5,7 @@ import { createAnonClient, supabase } from '../config/supabase.js';
 import { paystackService } from './paystack.service.js';
 import type {
   ChangeAmbassadorPasswordInput,
+  GetAmbassadorPayoutsInput,
   LoginAmbassadorInput,
   RefreshAmbassadorTokenInput,
   RegisterAmbassadorInput,
@@ -368,6 +369,56 @@ export class AmbassadorService {
     }
 
     return data;
+  }
+
+  /**
+   * Returns the ambassador's own payout (withdrawal) records, newest first,
+   * paginated. Optionally filters by status.
+   */
+  async getPayouts(userId: string, opts: GetAmbassadorPayoutsInput) {
+    const { status, limit, offset } = opts;
+
+    const PAYOUT_SELECT =
+      'id, amount_ngn, status, bank_code, bank_name, account_number, account_name, reference, created_at, processed_at, rejection_reason';
+
+    let listQuery = supabase
+      .from('withdrawals')
+      .select(PAYOUT_SELECT)
+      .eq('ambassador_user_id', userId)
+      .order('created_at', { ascending: false });
+
+    let countQuery = supabase
+      .from('withdrawals')
+      .select('id', { count: 'exact', head: true })
+      .eq('ambassador_user_id', userId);
+
+    if (status) {
+      listQuery = listQuery.eq('status', status);
+      countQuery = countQuery.eq('status', status);
+    }
+
+    const [listResult, countResult] = await Promise.all([
+      listQuery.range(offset, offset + limit - 1),
+      countQuery,
+    ]);
+
+    if (listResult.error) {
+      throw new HttpError(
+        500,
+        `Failed to fetch payouts: ${listResult.error.message}`,
+      );
+    }
+    if (countResult.error) {
+      throw new HttpError(
+        500,
+        `Failed to count payouts: ${countResult.error.message}`,
+      );
+    }
+
+    return {
+      items: listResult.data ?? [],
+      total: countResult.count ?? 0,
+    };
   }
 
   /**
