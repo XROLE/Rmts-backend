@@ -12,6 +12,7 @@ import type {
 
 const COMMISSION_PERCENT = Number(process.env.COMMISSION_PERCENT ?? 10);
 const MIN_WITHDRAWAL_AMOUNT = Number(process.env.MIN_WITHDRAWAL_AMOUNT ?? 1000);
+const MAX_WITHDRAWAL_AMOUNT = Number(process.env.MAX_WITHDRAWAL_AMOUNT ?? 5000);
 const PAYMENT_RETURN_URL = process.env.PAYMENT_RETURN_URL;
 const SIMULATE_TRANSFERS = process.env.SIMULATE_PAYSTACK_TRANSFERS === 'true';
 
@@ -545,6 +546,13 @@ export class PaymentService {
       throw new HttpError(
         400,
         `Minimum withdrawal is NGN ${MIN_WITHDRAWAL_AMOUNT}`,
+      );
+    }
+
+    if (amountNg > MAX_WITHDRAWAL_AMOUNT) {
+      throw new HttpError(
+        400,
+        `Maximum withdrawal per request is NGN ${MAX_WITHDRAWAL_AMOUNT}`,
       );
     }
 
