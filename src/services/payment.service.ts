@@ -517,10 +517,14 @@ export class PaymentService {
       (profiles ?? []).map((p) => [p.user_id, p]),
     );
 
-    const items = withdrawals.map((w) => ({
-      ...w,
-      ambassador: profileByUserId.get(w.ambassador_user_id) ?? null,
-    }));
+    const items = withdrawals.map((w) => {
+      const profile = profileByUserId.get(w.ambassador_user_id) ?? null;
+      return {
+        ...w,
+        ambassador: profile,
+        withdrawableBalance: profile ? Number(profile.available_balance_ngn ?? 0) : 0,
+      };
+    });
 
     return {
       items,
