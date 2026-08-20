@@ -654,6 +654,58 @@ export class AmbassadorService {
     };
   }
 
+  /**
+   * Approves or rejects an ambassador profile. Approval sets is_approved=true
+   * and verification_status='approved'; rejection sets both to their rejected
+   * counterparts. Admin-only; uses the service-role client (bypasses RLS).
+   */
+  async setApproval(
+    profileId: string,
+    action: 'approve' | 'reject',
+    reason?: string,
+  ) {
+    const { data: existing, error: fetchError } = await supabase
+      .from('ambassador_profiles')
+      .select('id')
+      .eq('id', profileId)
+      .maybeSingle();
+
+    if (fetchError) {
+      throw new HttpError(
+        500,
+        `Failed to fetch ambassador profile: ${fetchError.message}`,
+      );
+    }
+    if (!existing) {
+      throw new HttpError(404, 'Ambassador profile not found');
+    }
+
+    const approved = action === 'approve';
+
+    const { data, error } = await supabase
+      .from('ambassador_profiles')
+      .update({
+        is_approved: approved,
+        verification_status: approved ? 'approved' : 'rejected',
+      })
+      .eq('id', profileId)
+      .select(PROFILE_SELECT)
+      .single();
+
+    if (error) {
+      throw new HttpError(
+        500,
+        `Failed to ${action} ambassador: ${error.message}`,
+      );
+    }
+
+    return {
+      profile: data,
+      action,
+      reason: reason ?? null,
+    };
+  }
+
   private authErrorMessage(message: string): string {
     if (message.toLowerCase().includes('already registered')) {
       return 'An account with this email already exists. Please log in.';

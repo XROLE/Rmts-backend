@@ -42,6 +42,19 @@ export const getAllAmbassadors = asyncHandler(
   },
 );
 
+export const confirmAmbassadorApproval = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+    const { action, reason } = req.body;
+    const result = await ambassadorService.setApproval(id, action, reason);
+    res.status(200).json({
+      success: true,
+      message: `Ambassador ${action === 'approve' ? 'approved' : 'rejected'} successfully`,
+      data: result,
+    });
+  },
+);
+
 export const loginAmbassador = asyncHandler(
   async (req: Request, res: Response) => {
     const data = await ambassadorService.login(req.body);

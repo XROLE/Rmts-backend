@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import {
   changeAmbassadorPasswordSchema,
+  confirmAmbassadorApprovalSchema,
   getAllAmbassadorsSchema,
   loginAmbassadorSchema,
   refreshAmbassadorTokenSchema,
@@ -15,6 +16,7 @@ import {
 } from '../schemas/ambassador.schema.js';
 import {
   changeAmbassadorPassword,
+  confirmAmbassadorApproval,
   getAllAmbassadors,
   getAmbassadorBanks,
   getAmbassadorProfile,
@@ -69,6 +71,13 @@ router.get(
   requireAdmin,
   validate(getAllAmbassadorsSchema),
   getAllAmbassadors,
+);
+// Admin-only: approve or reject an ambassador profile.
+router.patch(
+  '/:id/approval',
+  requireAdmin,
+  validate(confirmAmbassadorApprovalSchema),
+  confirmAmbassadorApproval,
 );
 router.patch(
   '/me',

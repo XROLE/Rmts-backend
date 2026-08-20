@@ -142,6 +142,28 @@ export const getAllAmbassadorsSchema = z.object({
   }),
 });
 
+export const confirmAmbassadorApprovalSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('A valid ambassador profile ID is required'),
+  }),
+  body: z
+    .object({
+      action: z.enum(['approve', 'reject'], {
+        errorMap: () => ({ message: "Action must be 'approve' or 'reject'" }),
+      }),
+      reason: z.string().min(1).max(500).optional(),
+    })
+    .superRefine((data, ctx) => {
+      if (data.action === 'reject' && !data.reason) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['reason'],
+          message: 'A rejection reason is required',
+        });
+      }
+    }),
+});
+
 export type RegisterAmbassadorInput = z.infer<
   typeof registerAmbassadorSchema
 >['body'];
@@ -168,4 +190,8 @@ export type SaveBankDetailsInput = z.infer<
 
 export type RefreshAmbassadorTokenInput = z.infer<
   typeof refreshAmbassadorTokenSchema
+>['body'];
+
+export type ConfirmAmbassadorApprovalInput = z.infer<
+  typeof confirmAmbassadorApprovalSchema
 >['body'];
