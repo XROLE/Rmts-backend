@@ -363,8 +363,11 @@ export class AmbassadorService {
 
   /**
    * Updates the ambassador's own profile + bank details. Verification status
-   * and ambassador ranking are excluded so an ambassador cannot escalate
-   * themselves; those remain admin-managed.
+   * and ambassador ranking cannot be set directly so an ambassador cannot
+   * escalate themselves. On the ambassador's behalf this method only moves the
+   * verification status to 'pending' (and clears approval) when vetting
+   * information (social media details) is submitted; final approval/rejection
+   * remain admin-managed.
    */
   async updateProfile(userId: string, payload: UpdateAmbassadorProfileInput) {
     const {
@@ -394,6 +397,17 @@ export class AmbassadorService {
     if (socialMediaPlatform !== undefined) profileUpdate.social_media_platform = socialMediaPlatform;
     if (socialMediaHandle !== undefined) profileUpdate.social_media_handle = socialMediaHandle;
     if (socialMediaTargetAudience !== undefined) profileUpdate.social_media_target_audience = socialMediaTargetAudience;
+
+    // Submitting vetting information (social media details) moves the
+    // ambassador into the admin review pipeline until they are approved.
+    const submittedVetting =
+      socialMediaPlatform !== undefined ||
+      socialMediaHandle !== undefined ||
+      socialMediaTargetAudience !== undefined;
+    if (submittedVetting) {
+      profileUpdate.verification_status = 'pending';
+      profileUpdate.is_approved = false;
+    }
 
     const { data, error } = await supabase
       .from('ambassador_profiles')
