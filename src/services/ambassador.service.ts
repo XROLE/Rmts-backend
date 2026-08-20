@@ -195,8 +195,9 @@ export class AmbassadorService {
 
   /**
    * Returns admin dashboard ambassador metrics: ambassador counts, referral
-   * volume, payout statuses, and verification pipeline state. All counts are
-   * exact head-counts; referrals use the denormalized total_referrals column.
+   * volume, payout totals, and verification pipeline state. Ambassador and
+   * verification counts are exact head-counts; payouts are summed NGN totals;
+   * referrals use the denormalized total_referrals column.
    */
   async getDashboardStats() {
     const [
@@ -220,11 +221,11 @@ export class AmbassadorService {
         .eq('verification_status', 'pending'),
       supabase
         .from('withdrawals')
-        .select('id', { count: 'exact', head: true })
+        .select('amount_ngn')
         .eq('status', 'paid'),
       supabase
         .from('withdrawals')
-        .select('id', { count: 'exact', head: true })
+        .select('amount_ngn')
         .in('status', ['pending', 'processing']),
       supabase.from('ambassador_profiles').select('total_referrals'),
     ]);
@@ -250,13 +251,13 @@ export class AmbassadorService {
     if (paidPayoutRes.error) {
       throw new HttpError(
         500,
-        `Failed to count paid payouts: ${paidPayoutRes.error.message}`,
+        `Failed to fetch paid payouts: ${paidPayoutRes.error.message}`,
       );
     }
     if (pendingPayoutRes.error) {
       throw new HttpError(
         500,
-        `Failed to count pending payouts: ${pendingPayoutRes.error.message}`,
+        `Failed to fetch pending payouts: ${pendingPayoutRes.error.message}`,
       );
     }
     if (referralsRes.error) {
@@ -275,8 +276,16 @@ export class AmbassadorService {
     return {
       totalAmbassadors: totalRes.count ?? 0,
       totalReferrals,
-      totalPendingPayouts: pendingPayoutRes.count ?? 0,
-      totalPayoutsPaid: paidPayoutRes.count ?? 0,
+      totalPendingPayouts:
+        pendingPayoutRes.data?.reduce(
+          (sum, row) => sum + Number(row.amount_ngn ?? 0),
+          0,
+        ) ?? 0,
+      totalPayoutsPaid:
+        paidPayoutRes.data?.reduce(
+          (sum, row) => sum + Number(row.amount_ngn ?? 0),
+          0,
+        ) ?? 0,
       unverifiedAmbassadors: unverifiedRes.count ?? 0,
       verificationRequestsPending: verificationPendingRes.count ?? 0,
     };
