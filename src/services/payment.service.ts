@@ -278,7 +278,8 @@ export class PaymentService {
       supabase
         .from('withdrawals')
         .select('amount_ngn')
-        .eq('ambassador_user_id', userId),
+        .eq('ambassador_user_id', userId)
+        .not('status', 'in', '("rejected","failed")'),
     ]);
 
     const pendingPayments =
