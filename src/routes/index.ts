@@ -5,6 +5,7 @@ import verificationRoutes from './verification.routes.js';
 import supportRoutes from './support.routes.js';
 import paymentRoutes from './payment.routes.js';
 import matchRoutes from './match.routes.js';
+import whatsappRoutes from './whatsapp.routes.js';
 
 const router = Router();
 
@@ -18,5 +19,6 @@ router.use('/verification', verificationRoutes);
 router.use('/support', supportRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/matches', matchRoutes);
+router.use('/whatsapp', whatsappRoutes);
 
 export default router;

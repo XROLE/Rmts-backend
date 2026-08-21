@@ -14,6 +14,17 @@ export function createApp(): Application {
       credentials: true,
     }),
   );
+  // Preserve the raw body for the WhatsApp webhook so the HMAC signature can
+  // be verified against the exact bytes Meta signed.
+  app.use(
+    '/api/v1/whatsapp/webhook',
+    express.raw({ type: 'application/json', limit: '1mb' }),
+    (req, res, next) => {
+      res.locals.rawBody = (req.body as Buffer).toString('utf8');
+      next();
+    },
+  );
+
   // Preserve the raw body for the Paystack webhook so the HMAC signature can
   // be verified against the exact bytes Paystack signed.
   app.use(

@@ -1,6 +1,7 @@
 import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { computeMatchScore, isEligiblePair, MatchBreakdown } from './matchScoring.js';
+import { whatsappHandoverService } from './whatsappHandover.service.js';
 
 interface RoommateProfileRow {
   id: string;
@@ -191,6 +192,19 @@ export class MatchService {
     if (statusError) {
       console.error('Failed to mark profiles as matched:', statusError.message);
     }
+
+    // Kick off the WhatsApp Flows handover without blocking the confirmation.
+    // A WhatsApp delivery failure must never roll back an otherwise-confirmed
+    // match; the admin can retry via the handover endpoint.
+    whatsappHandoverService
+      .startHandover({
+        id: match.id,
+        roommate_profile_a_id: profileAId,
+        roommate_profile_b_id: profileBId,
+      })
+      .catch((err) => {
+        console.error('[whatsapp] handover start failed:', err);
+      });
 
     return {
       match: match as RoommateMatchRow,
