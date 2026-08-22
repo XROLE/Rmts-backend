@@ -1,10 +1,7 @@
 import { Request, Response } from 'express';
 import { whatsappService } from '../services/whatsapp.service.js';
-import { whatsappHandoverService } from '../services/whatsappHandover.service.js';
-import { supabase } from '../config/supabase.js';
-import { HttpError } from '../middleware/errorHandler.js';
-import { asyncHandler } from '../utils/asyncHandler.js';
-import type { AuthenticatedRequest } from '../middleware/auth.js';
+import { whatsappLifecycleService } from '../services/whatsappLifecycle.service.js';
+import type { TriggerMatchInput } from '../services/whatsappLifecycle.service.js';
 
 /**
  * GET /webhook — Meta's webhook verification handshake. Echoes hub.challenge
@@ -25,7 +22,9 @@ export function whatsappWebhookGet(req: Request, res: Response) {
 
 /**
  * POST /webhook — inbound events from Meta. Verifies the HMAC signature, then
- * dispatches Flow form submissions (nfm_reply) to the handover state machine.
+ * dispatches Flow form submissions (nfm_reply) to the lifecycle engine:
+ *   - proceed_decision -> onboarding response
+ *   - accept_match     -> match decision
  */
 export async function whatsappWebhookPost(req: Request, res: Response) {
   const rawBody = (res.locals.rawBody as string | undefined) ?? '';
@@ -42,24 +41,43 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
   for (const change of changes) {
     const messages = change?.value?.messages ?? [];
     for (const message of messages) {
-      const isFlowReply =
+      const nfmReply =
         message?.type === 'interactive' &&
         message?.interactive?.type === 'nfm_reply' &&
-        message?.interactive?.nfm_reply?.name === 'flow' &&
-        typeof message?.interactive?.nfm_reply?.response_json === 'string';
+        message?.interactive?.nfm_reply?.name === 'flow'
+          ? message.interactive.nfm_reply
+          : null;
 
-      if (isFlowReply) {
-        const responseJson = JSON.parse(
-          message.interactive.nfm_reply.response_json,
-        ) as Record<string, unknown>;
-        const flowToken = responseJson?.flow_token;
-        if (typeof flowToken === 'string') {
-          try {
-            await whatsappHandoverService.handleFlowResponse(flowToken, responseJson);
-          } catch (err) {
-            console.error('[whatsapp] flow handling failed:', err);
-          }
+      if (!nfmReply || typeof nfmReply.response_json !== 'string') continue;
+
+      let responseJson: Record<string, unknown>;
+      try {
+        responseJson = JSON.parse(nfmReply.response_json);
+      } catch {
+        console.warn('[whatsapp] unparseable nfm_reply response_json');
+        continue;
+      }
+
+      try {
+        if (typeof responseJson.proceed_decision === 'string') {
+          await whatsappLifecycleService.handleOnboardingResponse(
+            String(message.from ?? ''),
+            responseJson,
+          );
+        } else if (
+          typeof responseJson.accept_match === 'string' &&
+          typeof responseJson.flow_token === 'string'
+        ) {
+          await whatsappLifecycleService.handleMatchDecision(
+            responseJson.flow_token,
+            responseJson,
+          );
+        } else {
+          console.warn('[whatsapp] unrecognized flow submission keys:', Object.keys(responseJson));
         }
+      } catch (err) {
+        // Always ACK the webhook; failures are logged and can be retried.
+        console.error('[whatsapp] flow handling failed:', err);
       }
     }
   }
@@ -68,39 +86,29 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
 }
 
 /**
- * POST /handovers/:matchId/start — admin retry/start for a confirmed match's
- * WhatsApp handover. Returns the created (or existing) handover.
+ * POST /trigger-onboarding — internal trigger that sends the onboarding Flow
+ * inviting a user to confirm their search.
  */
-export const startHandover = asyncHandler(
-  async (req: AuthenticatedRequest, res: Response) => {
-    const matchId = req.params.matchId;
+export async function triggerOnboarding(req: Request, res: Response) {
+  const { phone, name } = req.body as { phone: string; name: string };
+  const result = await whatsappLifecycleService.triggerOnboarding({ phone, name });
+  res.status(201).json({
+    success: true,
+    message: 'Onboarding flow sent successfully',
+    data: result,
+  });
+}
 
-    const { data: match, error } = await supabase
-      .from('roommate_matches')
-      .select('id, roommate_profile_a_id, roommate_profile_b_id')
-      .eq('id', matchId)
-      .maybeSingle();
-
-    if (error || !match) {
-      throw new HttpError(404, 'Match not found');
-    }
-
-    await whatsappHandoverService.startHandover({
-      id: match.id,
-      roommate_profile_a_id: match.roommate_profile_a_id,
-      roommate_profile_b_id: match.roommate_profile_b_id,
-    });
-
-    const { data: handover } = await supabase
-      .from('match_whatsapp_handovers')
-      .select('*')
-      .eq('match_id', matchId)
-      .maybeSingle();
-
-    res.status(201).json({
-      success: true,
-      message: 'WhatsApp handover started successfully',
-      data: handover,
-    });
-  },
-);
+/**
+ * POST /trigger-match — internal trigger that sends the match decision Flow
+ * presenting non-PII candidate details to the user.
+ */
+export async function triggerMatch(req: Request, res: Response) {
+  const input = req.body as TriggerMatchInput;
+  const result = await whatsappLifecycleService.triggerMatch(input);
+  res.status(201).json({
+    success: true,
+    message: 'Match flow sent successfully',
+    data: result,
+  });
+}

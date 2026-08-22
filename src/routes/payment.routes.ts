@@ -18,6 +18,7 @@ import {
   getPaystackBalance,
   getAdminOverview,
   paystackWebhook,
+  roommatePaystackWebhook,
   requestWithdrawal,
   confirmWithdrawal,
   rejectWithdrawal,
@@ -28,6 +29,9 @@ const router = Router();
 // Public: Paystack callback for payment/transfer events. Consumed with a raw
 // body so the HMAC signature can be verified against the exact payload.
 router.post('/webhook', paystackWebhook);
+
+// Public: Paystack charge.success for the roommate's one-time unlock payment.
+router.post('/paystack-webhook', roommatePaystackWebhook);
 
 // Authenticated routes.
 router.use(requireAuth);

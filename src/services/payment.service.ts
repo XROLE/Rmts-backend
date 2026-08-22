@@ -3,6 +3,7 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { paystackService } from './paystack.service.js';
 import { matchService } from './match.service.js';
+import { whatsappLifecycleService } from './whatsappLifecycle.service.js';
 import type {
   ConfirmWithdrawalInput,
   CreatePaymentLinkInput,
@@ -257,6 +258,79 @@ export class PaymentService {
       .eq('paystack_reference', reference);
 
     return { handled: true, commission };
+  }
+
+  /**
+   * Processes a Paystack charge.success for the roommate's one-time unlock
+   * payment (transactions table). Verifies the HMAC-SHA512 signature and is
+   * idempotent on the reference. On success: transaction -> SUCCESS, match ->
+   * UNLOCKED, then the three fulfillment messages are sent on WhatsApp.
+   */
+  async handleRoommateChargeSuccess(rawBody: string, signature: string | undefined) {
+    if (!paystackService.verifyWebhookSignature(rawBody, signature)) {
+      throw new HttpError(401, 'Invalid webhook signature');
+    }
+
+    const event = JSON.parse(rawBody);
+    if (event?.event !== 'charge.success') {
+      console.log('[paystack-webhook] ignored non-charge-success event:', event?.event);
+      return { handled: false };
+    }
+
+    const reference = event?.data?.reference;
+    if (!reference) {
+      console.log('[paystack-webhook] missing reference in payload');
+      return { handled: false };
+    }
+
+    const { data: txn, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('reference', reference)
+      .maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to look up transaction: ${error.message}`);
+    }
+
+    // Idempotency: unknown references are ignored; already-processed ones are
+    // acknowledged without re-fulfilling.
+    if (!txn) {
+      console.log('[paystack-webhook] no transaction for reference:', reference);
+      return { handled: false };
+    }
+    if (txn.status === 'SUCCESS') {
+      return { handled: true, duplicate: true };
+    }
+
+    const now = new Date().toISOString();
+
+    const { error: updateError } = await supabase
+      .from('transactions')
+      .update({ status: 'SUCCESS', paid_at: now })
+      .eq('reference', reference);
+
+    if (updateError) {
+      throw new HttpError(500, `Failed to mark transaction successful: ${updateError.message}`);
+    }
+
+    if (txn.match_id) {
+      await supabase
+        .from('matches')
+        .update({ status: 'UNLOCKED' })
+        .eq('id', txn.match_id)
+        .eq('status', 'ACCEPTED');
+    }
+
+    // Fulfillment messaging is best-effort: the webhook must still ACK even
+    // if a WhatsApp send fails.
+    try {
+      await whatsappLifecycleService.fulfillUnlock(txn.match_id);
+    } catch (err) {
+      console.error('[paystack-webhook] fulfillment messaging failed:', err);
+    }
+
+    return { handled: true };
   }
 
   /**

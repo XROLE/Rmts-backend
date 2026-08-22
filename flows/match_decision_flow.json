@@ -1,0 +1,69 @@
+{
+  "version": "6.0",
+  "screens": [
+    {
+      "id": "MATCH_DECISION_SCREEN",
+      "title": "Your match",
+      "terminal": true,
+      "data": {
+        "candidate_summary": {
+          "type": "string",
+          "__example__": "**Age:** 25\n**Occupation:** Student\n**Areas:** Yaba, Lagos\n**Budget:** ₦300,000 - ₦400,000\n**Move-in:** 2026-09-01"
+        },
+        "compatibility_score": {
+          "type": "string",
+          "__example__": "92"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "🎉 We found a potential roommate with a *${data.compatibility_score}% compatibility score*! Here is a preview (full contact details unlock after payment):",
+            "markdown": true
+          },
+          {
+            "type": "TextBody",
+            "text": "${data.candidate_summary}",
+            "markdown": true
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "accept_match",
+            "label": "Would you like to proceed?",
+            "required": true,
+            "data-source": [
+              { "id": "YES", "label": "Yes, proceed to unlock contact details" },
+              { "id": "NO", "label": "No, pass on this match" }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "decline_reason",
+            "label": "Mind telling us why? (helps us match better)",
+            "required": false,
+            "visible": "${form.accept_match == 'NO'}",
+            "data-source": [
+              { "id": "BUDGET_MISMATCH", "label": "Budget mismatch" },
+              { "id": "LOCATION_PREFERENCE", "label": "Location preference" },
+              { "id": "TIMING_ISSUE", "label": "Timing issue" },
+              { "id": "OTHER", "label": "Other" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Submit",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "accept_match": "${form.accept_match}",
+                "decline_reason": "${form.decline_reason}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

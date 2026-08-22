@@ -34,6 +34,26 @@ export const paystackWebhook = asyncHandler(
   },
 );
 
+/**
+ * POST /payments/paystack-webhook — Paystack charge.success for the
+ * roommate's one-time unlock payment. Verifies the HMAC-SHA512 signature,
+ * marks the transaction/match, and sends the post-unlock WhatsApp messages.
+ */
+export const roommatePaystackWebhook = asyncHandler(
+  async (req: Request, res: Response) => {
+    const rawBody = (res.locals.rawBody as string | undefined) ?? '';
+    const signature = req.headers['x-paystack-signature'] as string | undefined;
+    try {
+      const result = await paymentService.handleRoommateChargeSuccess(rawBody, signature);
+      console.log('[paystack-webhook] outcome', result);
+      res.status(200).json({ success: true, ...result });
+    } catch (err) {
+      console.error('[paystack-webhook] failed', err);
+      throw err;
+    }
+  },
+);
+
 export const getPaymentSummary = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     const data = await paymentService.getSummary(req.user!.id);

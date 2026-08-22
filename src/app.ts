@@ -36,6 +36,16 @@ export function createApp(): Application {
     },
   );
 
+  // Same raw-body preservation for the roommate unlock payment webhook.
+  app.use(
+    '/api/v1/payments/paystack-webhook',
+    express.raw({ type: 'application/json', limit: '1mb' }),
+    (req, res, next) => {
+      res.locals.rawBody = (req.body as Buffer).toString('utf8');
+      next();
+    },
+  );
+
   app.use(express.json({ limit: '1mb' }));
 
   app.use('/api/v1', routes);

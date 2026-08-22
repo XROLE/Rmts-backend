@@ -1,0 +1,51 @@
+{
+  "version": "6.0",
+  "screens": [
+    {
+      "id": "CONFIRM_SEARCH_SCREEN",
+      "title": "Confirm your search",
+      "terminal": true,
+      "data": {
+        "user_name": {
+          "type": "string",
+          "__example__": "Eze"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Hi ${data.user_name}! 👋 Roommates NG matches you with a compatible roommate in your area.",
+            "markdown": true
+          },
+          {
+            "type": "TextBody",
+            "text": "*How it works*\nWe search for a compatible roommate and notify you here on WhatsApp. When you accept a match, you pay a one-time *₦2,000* fee to unlock your roommate's contact details.\n\n⚠️ *Scam warning:* We never ask for rent or deposits on this chat. Only pay the ₦2,000 unlock fee through the official Paystack link we send you, and always inspect an apartment and verify ownership before paying any landlord or agent.",
+            "markdown": true
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "proceed_decision",
+            "label": "Would you like us to start searching for you?",
+            "required": true,
+            "data-source": [
+              { "id": "YES", "label": "Yes, start searching for me" },
+              { "id": "NO", "label": "No, pause my search for now" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Submit",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "proceed_decision": "${form.proceed_decision}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

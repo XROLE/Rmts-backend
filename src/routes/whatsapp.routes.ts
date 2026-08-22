@@ -2,11 +2,15 @@ import { Router } from 'express';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
-import { startHandoverSchema } from '../schemas/whatsapp.schema.js';
+import {
+  triggerOnboardingSchema,
+  triggerMatchSchema,
+} from '../schemas/whatsapp.schema.js';
 import {
   whatsappWebhookGet,
   whatsappWebhookPost,
-  startHandover,
+  triggerOnboarding,
+  triggerMatch,
 } from '../controllers/whatsapp.controller.js';
 
 const router = Router();
@@ -18,12 +22,18 @@ router.post('/webhook', whatsappWebhookPost);
 // Authenticated routes.
 router.use(requireAuth);
 
-// Admin only: start/retry a confirmed match's WhatsApp handover.
+// Internal triggers (admin only): send the onboarding / match decision Flows.
 router.post(
-  '/handovers/:matchId/start',
+  '/trigger-onboarding',
   requireAdmin,
-  validate(startHandoverSchema),
-  startHandover,
+  validate(triggerOnboardingSchema),
+  triggerOnboarding,
+);
+router.post(
+  '/trigger-match',
+  requireAdmin,
+  validate(triggerMatchSchema),
+  triggerMatch,
 );
 
 export default router;
