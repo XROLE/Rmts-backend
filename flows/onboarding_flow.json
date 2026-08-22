@@ -30,8 +30,8 @@
             "label": "Would you like us to start searching for you?",
             "required": true,
             "data-source": [
-              { "id": "YES", "label": "Yes, start searching for me" },
-              { "id": "NO", "label": "No, pause my search for now" }
+              { "id": "YES", "title": "Yes, start searching for me" },
+              { "id": "NO", "title": "No, pause my search for now" }
             ]
           },
           {

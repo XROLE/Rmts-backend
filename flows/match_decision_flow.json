@@ -34,21 +34,26 @@
             "label": "Would you like to proceed?",
             "required": true,
             "data-source": [
-              { "id": "YES", "label": "Yes, proceed to unlock contact details" },
-              { "id": "NO", "label": "No, pass on this match" }
+              { "id": "YES", "title": "Yes, proceed to unlock contact details" },
+              { "id": "NO", "title": "No, pass on this match" }
             ]
           },
           {
-            "type": "Dropdown",
-            "name": "decline_reason",
-            "label": "Mind telling us why? (helps us match better)",
-            "required": false,
-            "visible": "${form.accept_match == 'NO'}",
-            "data-source": [
-              { "id": "BUDGET_MISMATCH", "label": "Budget mismatch" },
-              { "id": "LOCATION_PREFERENCE", "label": "Location preference" },
-              { "id": "TIMING_ISSUE", "label": "Timing issue" },
-              { "id": "OTHER", "label": "Other" }
+            "type": "If",
+            "condition": "${form.accept_match} == 'NO'",
+            "then": [
+              {
+                "type": "Dropdown",
+                "name": "decline_reason",
+                "label": "Mind telling us why? (helps us match better)",
+                "required": false,
+                "data-source": [
+                  { "id": "BUDGET_MISMATCH", "title": "Budget mismatch" },
+                  { "id": "LOCATION_PREFERENCE", "title": "Location preference" },
+                  { "id": "TIMING_ISSUE", "title": "Timing issue" },
+                  { "id": "OTHER", "title": "Other" }
+                ]
+              }
             ]
           },
           {
