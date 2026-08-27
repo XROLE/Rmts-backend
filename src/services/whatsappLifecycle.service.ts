@@ -110,8 +110,10 @@ export class WhatsAppLifecycleService {
       body: 'Confirm your roommate search below. It only takes a few seconds.',
       flowToken,
       screen: 'CONFIRM_SEARCH_SCREEN',
-      initialData: { user_name: input.name },
+      initialData: { user_name: input.name, phone: phoneE164 },
     });
+
+    await this.recordFlowSession(flowToken, phoneE164, FLOW_ONBOARDING_ID, 'CONFIRM_SEARCH_SCREEN');
 
     return { phone: phoneE164, flowToken };
   }
@@ -164,8 +166,11 @@ export class WhatsAppLifecycleService {
       initialData: {
         candidate_summary: summary,
         compatibility_score: String(input.compatibilityScore),
+        phone: phoneE164,
       },
     });
+
+    await this.recordFlowSession(match.flow_token!, phoneE164, FLOW_MATCH_ID, 'MATCH_DECISION_SCREEN');
 
     return { matchId: match.id, flowToken: match.flow_token! };
   }
@@ -196,8 +201,10 @@ export class WhatsAppLifecycleService {
       body: 'Let\u2019s set up your roommate profile. It only takes about 2 minutes.',
       flowToken,
       screen: 'PERSONAL_SCREEN',
-      initialData: { user_name: input.name },
+      initialData: { user_name: input.name, phone: phoneE164 },
     });
+
+    await this.recordFlowSession(flowToken, phoneE164, FLOW_REGISTRATION_ID, 'PERSONAL_SCREEN');
 
     return { phone: phoneE164, flowToken };
   }
@@ -383,6 +390,54 @@ export class WhatsAppLifecycleService {
   // ---------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------
+
+  /**
+   * Resolves the originating phone for a flow_token. Used by the Data
+   * Exchange endpoint, which receives submissions without a sender phone.
+   * Looks up the flow_sessions mapping first, falling back to the match's
+   * user_phone when the token corresponds to a proposed match.
+   */
+  async getPhoneByFlowToken(flowToken: string): Promise<string | null> {
+    const { data, error } = await supabase
+      .from('flow_sessions')
+      .select('phone')
+      .eq('flow_token', flowToken)
+      .maybeSingle();
+
+    if (!error && data?.phone) {
+      return (data as { phone: string }).phone;
+    }
+
+    const { data: match } = await supabase
+      .from('matches')
+      .select('user_phone')
+      .eq('flow_token', flowToken)
+      .maybeSingle();
+
+    return (match?.user_phone as string | null) ?? null;
+  }
+
+  /** Upserts the flow_sessions mapping so a flow_token can be attributed to its sender. */
+  private async recordFlowSession(
+    flowToken: string,
+    phoneE164: string,
+    flowId: string,
+    screen: string,
+  ) {
+    const { error } = await supabase.from('flow_sessions').upsert(
+      {
+        flow_token: flowToken,
+        phone: phoneE164,
+        flow_id: flowId,
+        screen,
+      },
+      { onConflict: 'flow_token' },
+    );
+
+    if (error) {
+      console.error('[whatsapp] failed to record flow session:', error.message);
+    }
+  }
 
   /** Finds or creates the users row for a WhatsApp-led phone identity. */
   private async ensureUser(phoneE164: string, name?: string): Promise<UserRow> {

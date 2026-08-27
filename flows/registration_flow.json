@@ -1,5 +1,6 @@
 {
   "version": "6.0",
+  "endpoint": "https://rmts-backend.onrender.com/api/v1/flows/endpoint",
   "screens": [
     {
       "id": "PERSONAL_SCREEN",
