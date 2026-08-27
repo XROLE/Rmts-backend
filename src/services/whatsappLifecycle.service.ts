@@ -8,6 +8,19 @@ import { normalizePhoneToE164 } from '../utils/normalizePhone.js';
 
 const FLOW_ONBOARDING_ID = process.env.WHATSAPP_FLOW_ONBOARDING_ID ?? '';
 const FLOW_MATCH_ID = process.env.WHATSAPP_FLOW_MATCH_ID ?? '';
+const FLOW_REGISTRATION_ID = process.env.WHATSAPP_FLOW_REGISTRATION_ID ?? '';
+
+const REGISTRATION_GENDERS = ['male', 'female'] as const;
+const REGISTRATION_MARITAL_STATUS = ['single', 'married', 'divorced'] as const;
+const REGISTRATION_RELIGIONS = ['Christianity', 'Islam', 'Others'] as const;
+const REGISTRATION_OCCUPATIONS = [
+  'student',
+  'nysc',
+  'working_professional',
+  'self_employed',
+  'job_seeker',
+] as const;
+const REGISTRATION_SMOKING_HABITS = ['non_smoker', 'occasional_smoker', 'regular_smoker'] as const;
 const MATCH_PAYMENT_AMOUNT_NGN = Number(
   process.env.WHATSAPP_MATCH_PAYMENT_AMOUNT_NGN ?? 2000,
 );
@@ -157,6 +170,38 @@ export class WhatsAppLifecycleService {
     return { matchId: match.id, flowToken: match.flow_token! };
   }
 
+  /**
+   * Sends the 4-screen registration Flow inviting the user to build their
+   * full roommate profile. Submissions land in roommate_profiles via
+   * handleRegistrationResponse.
+   */
+  async triggerRegistration(input: { phone: string; name: string }) {
+    if (!FLOW_REGISTRATION_ID) {
+      throw new HttpError(500, 'WHATSAPP_FLOW_REGISTRATION_ID is not configured');
+    }
+
+    const phoneE164 = normalizePhoneToE164(input.phone);
+    if (!phoneE164) {
+      throw new HttpError(400, 'A valid Nigerian phone number is required');
+    }
+
+    await this.ensureUser(phoneE164, input.name);
+
+    const flowToken = randomUUID();
+    await whatsappService.sendFlowMessage({
+      to: phoneE164,
+      flowId: FLOW_REGISTRATION_ID,
+      cta: 'Start registration',
+      header: `Welcome, ${input.name.split(' ')[0]}!`,
+      body: 'Let\u2019s set up your roommate profile. It only takes about 2 minutes.',
+      flowToken,
+      screen: 'PERSONAL_SCREEN',
+      initialData: { user_name: input.name },
+    });
+
+    return { phone: phoneE164, flowToken };
+  }
+
   // ---------------------------------------------------------------
   // Inbound webhook handlers
   // ---------------------------------------------------------------
@@ -194,6 +239,59 @@ export class WhatsAppLifecycleService {
     );
 
     return { handled: true, decision };
+  }
+
+  /**
+   * Registration form submission (flow: registration). Parses and validates
+   * the 4-screen payload, then persists a row in roommate_profiles keyed by
+   * the sender's phone number. Duplicate registrations are acknowledged and
+   * skipped rather than double-inserted.
+   */
+  async handleRegistrationResponse(fromPhone: string, responseJson: Record<string, unknown>) {
+    const phoneE164 = normalizePhoneToE164(fromPhone);
+    if (!phoneE164) {
+      console.warn('[whatsapp] registration ignored without a valid sender phone');
+      return { handled: false };
+    }
+
+    const profile = this.parseRegistrationPayload(responseJson);
+    if (!profile) {
+      console.warn('[whatsapp] registration payload failed validation', { fromPhone });
+      await whatsappService.sendText(
+        phoneE164,
+        '⚠️ Something went wrong with your registration. Please try again — if the problem persists, contact support.',
+      );
+      return { handled: false, invalid: true };
+    }
+
+    const existing = await this.findProfileByPhone(phoneE164);
+    if (existing) {
+      await whatsappService.sendText(
+        phoneE164,
+        '🎉 You already have a profile with Roommates NG — no need to register again. We\u2019ll notify you here on WhatsApp when we find a match.',
+      );
+      return { handled: true, duplicate: true };
+    }
+
+    const { error: insertError, data: created } = await supabase
+      .from('roommate_profiles')
+      .insert({ ...profile, phone_number: phoneE164 })
+      .select('id')
+      .single();
+
+    if (insertError || !created) {
+      throw new HttpError(500, `Failed to save registration profile: ${insertError?.message}`);
+    }
+
+    // Keep the WhatsApp identity row's email in sync with the submitted one.
+    await supabase.from('users').update({ email: profile.email }).eq('phone', phoneE164);
+
+    await whatsappService.sendText(
+      phoneE164,
+      `🎉 Registration complete, ${profile.full_name.split(' ')[0]}! We've received your details and will start matching you with a compatible roommate. We'll ping you right here on WhatsApp as soon as we find a match.`,
+    );
+
+    return { handled: true, profileId: created.id };
   }
 
   /**
@@ -583,6 +681,163 @@ export class WhatsAppLifecycleService {
       throw new HttpError(500, `Failed to load user: ${error.message}`);
     }
     return (data as UserRow | null) ?? null;
+  }
+
+  /**
+   * Validates and normalizes the registration form payload into the exact
+   * column mapping used by roommate_profiles. Returns null when any required
+   * field is missing or invalid (the user is told to retry).
+   */
+  private parseRegistrationPayload(
+    responseJson: Record<string, unknown>,
+  ): {
+    full_name: string;
+    email: string;
+    gender: string;
+    age_range: string;
+    marital_status: string;
+    religion: string;
+    state: string;
+    preferred_locations: string[];
+    budget_min: number;
+    budget_max: number;
+    expected_move_in_date: string;
+    occupation: string;
+    smoking_habit: string;
+    allows_pets: boolean;
+    personal_bio: string | null;
+    agreed_to_terms: boolean;
+    agreed_at: string;
+    status: string;
+    is_active: boolean;
+  } | null {
+    const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+
+    const first_name = str(responseJson.first_name);
+    const last_name = str(responseJson.last_name);
+    const email = str(responseJson.email).toLowerCase();
+    const gender = str(responseJson.gender);
+    const age_range = str(responseJson.age_range);
+    const marital_status = str(responseJson.marital_status);
+    const religion = str(responseJson.religion);
+    const state = str(responseJson.state);
+    const location = str(responseJson.location);
+    const occupation = str(responseJson.occupation);
+    const smoking_habit = str(responseJson.smoking_habit);
+
+    if (!first_name || !last_name) return null;
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+    if (!(REGISTRATION_GENDERS as readonly string[]).includes(gender)) return null;
+    if (!age_range) return null;
+    if (!(REGISTRATION_MARITAL_STATUS as readonly string[]).includes(marital_status)) return null;
+    if (!(REGISTRATION_RELIGIONS as readonly string[]).includes(religion)) return null;
+    if (state !== 'Lagos') return null;
+    if (!location) return null;
+    if (!(REGISTRATION_OCCUPATIONS as readonly string[]).includes(occupation)) return null;
+    if (!(REGISTRATION_SMOKING_HABITS as readonly string[]).includes(smoking_habit)) return null;
+
+    const budgetMin = this.normalizeBudgetValue(responseJson.budget_min);
+    const budgetMax = this.normalizeBudgetValue(responseJson.budget_max);
+    if (budgetMin === null || budgetMax === null || budgetMax < budgetMin) return null;
+
+    const expectedMoveInDate = this.normalizeDate(responseJson.expected_move_in_date);
+    if (!expectedMoveInDate) return null;
+
+    if (!this.agreedToTerms(responseJson.agreed_to_terms)) return null;
+
+    const allowsPets = String(responseJson.allows_pets).toUpperCase() === 'YES';
+    const personalBio = str(responseJson.personal_bio) || null;
+
+    return {
+      full_name: `${first_name} ${last_name}`,
+      email,
+      gender,
+      age_range,
+      marital_status,
+      religion,
+      state,
+      preferred_locations: [location],
+      budget_min: budgetMin,
+      budget_max: budgetMax,
+      expected_move_in_date: expectedMoveInDate,
+      occupation,
+      smoking_habit,
+      allows_pets: allowsPets,
+      personal_bio: personalBio,
+      agreed_to_terms: true,
+      agreed_at: new Date().toISOString(),
+      status: 'new',
+      is_active: true,
+    };
+  }
+
+  private normalizeBudgetValue(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+
+    if (typeof value === 'string') {
+      if (value === '2000000_plus') return 2000000;
+      const cleaned = value.replace(/[^\d.-]/g, '');
+      if (!cleaned) return null;
+      const n = Number(cleaned);
+      return Number.isFinite(n) ? n : null;
+    }
+    return null;
+  }
+
+  /** Accepts YYYY-MM-DD or DD/MM/YYYY style dates (Meta picker format varies by device locale). */
+  private normalizeDate(value: unknown): string | null {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const s = value.trim();
+
+    const iso = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (iso) {
+      return this.padDate(iso[1], iso[2], iso[3]);
+    }
+
+    const dmy = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    if (dmy) {
+      const first = Number(dmy[1]);
+      const second = Number(dmy[2]);
+      const year = dmy[3];
+      if (first > 12) return this.padDate(year, dmy[2], dmy[1]);
+      if (second > 12) return this.padDate(year, dmy[1], dmy[2]);
+      return this.padDate(year, dmy[2], dmy[1]);
+    }
+
+    const parsed = new Date(s);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return this.padDate(
+      String(parsed.getFullYear()),
+      String(parsed.getMonth() + 1),
+      String(parsed.getDate()),
+    );
+  }
+
+  private padDate(year: string, month: string, day: string): string {
+    const mm = month.padStart(2, '0');
+    const dd = day.padStart(2, '0');
+    const formatted = `${year}-${mm}-${dd}`;
+    const d = new Date(formatted);
+    if (Number.isNaN(d.getTime())) return '';
+    return formatted;
+  }
+
+  private agreedToTerms(value: unknown): boolean {
+    if (Array.isArray(value)) return value.includes('AGREE');
+    return String(value) === 'AGREE' || String(value) === 'true';
+  }
+
+  private async findProfileByPhone(phoneE164: string): Promise<{ id: string } | null> {
+    const { data, error } = await supabase
+      .from('roommate_profiles')
+      .select('id')
+      .eq('phone_number', phoneE164)
+      .maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to look up existing profile: ${error.message}`);
+    }
+    return (data as { id: string } | null) ?? null;
   }
 }
 

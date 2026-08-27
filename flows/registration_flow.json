@@ -1,0 +1,453 @@
+{
+  "version": "6.0",
+  "screens": [
+    {
+      "id": "PERSONAL_SCREEN",
+      "title": "Personal info",
+      "terminal": false,
+      "data": {
+        "user_name": {
+          "type": "string",
+          "__example__": "Eze"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Hi ${data.user_name}! 👋 Let's set up your roommate profile.\n\n*Step 1 of 4* — Just a few personal details to start.",
+            "markdown": true
+          },
+          {
+            "type": "TextInput",
+            "name": "first_name",
+            "label": "First name",
+            "helper-text": "e.g. Eze",
+            "required": true,
+            "max-chars": 50
+          },
+          {
+            "type": "TextInput",
+            "name": "last_name",
+            "label": "Last name",
+            "helper-text": "e.g. Okoro",
+            "required": true,
+            "max-chars": 50
+          },
+          {
+            "type": "TextInput",
+            "name": "email",
+            "label": "Email address",
+            "helper-text": "e.g. eze@email.com",
+            "required": true,
+            "input-type": "email",
+            "max-chars": 150
+          },
+          {
+            "type": "Dropdown",
+            "name": "gender",
+            "label": "Gender",
+            "required": true,
+            "data-source": [
+              { "id": "male", "title": "Male" },
+              { "id": "female", "title": "Female" }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "age_range",
+            "label": "Age range",
+            "required": true,
+            "data-source": [
+              { "id": "18-24", "title": "18 – 24" },
+              { "id": "25-30", "title": "25 – 30" },
+              { "id": "31-40", "title": "31 – 40" },
+              { "id": "41-50", "title": "41 – 50" },
+              { "id": "50+", "title": "50+" }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "marital_status",
+            "label": "Marital status",
+            "required": true,
+            "data-source": [
+              { "id": "single", "title": "Single" },
+              { "id": "married", "title": "Married" },
+              { "id": "divorced", "title": "Divorced" }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "religion",
+            "label": "Religion",
+            "required": true,
+            "data-source": [
+              { "id": "Christianity", "title": "Christianity" },
+              { "id": "Islam", "title": "Islam" },
+              { "id": "Others", "title": "Others" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Next",
+            "on-click-action": {
+              "name": "navigate",
+              "next": {
+                "type": "screen",
+                "name": "PREFERENCE_SCREEN"
+              },
+              "payload": {
+                "user_name": "${data.user_name}",
+                "first_name": "${form.first_name}",
+                "last_name": "${form.last_name}",
+                "email": "${form.email}",
+                "gender": "${form.gender}",
+                "age_range": "${form.age_range}",
+                "marital_status": "${form.marital_status}",
+                "religion": "${form.religion}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PREFERENCE_SCREEN",
+      "title": "Location & budget",
+      "terminal": false,
+      "data": {
+        "user_name": { "type": "string", "__example__": "Eze" },
+        "first_name": { "type": "string", "__example__": "Eze" },
+        "last_name": { "type": "string", "__example__": "Okoro" },
+        "email": { "type": "string", "__example__": "eze@email.com" },
+        "gender": { "type": "string", "__example__": "male" },
+        "age_range": { "type": "string", "__example__": "25-30" },
+        "marital_status": { "type": "string", "__example__": "single" },
+        "religion": { "type": "string", "__example__": "Christianity" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "Nice to meet you, ${data.first_name}! 😊\n\n*Step 2 of 4* — Where would you like to live and what's your budget?",
+            "markdown": true
+          },
+          {
+            "type": "Dropdown",
+            "name": "state",
+            "label": "State",
+            "required": true,
+            "data-source": [
+              { "id": "Lagos", "title": "Lagos" }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "location",
+            "label": "Preferred location",
+            "required": true,
+            "data-source": [
+              { "id": "Ajah", "title": "Ajah" },
+              { "id": "Abijo", "title": "Abijo" },
+              { "id": "Agungi", "title": "Agungi" },
+              { "id": "Awoyaya", "title": "Awoyaya" },
+              { "id": "Banana Island", "title": "Banana Island" },
+              { "id": "Chevron", "title": "Chevron" },
+              { "id": "Epe", "title": "Epe" },
+              { "id": "Igbo Efon", "title": "Igbo Efon" },
+              { "id": "Ikate", "title": "Ikate" },
+              { "id": "Ikoyi", "title": "Ikoyi" },
+              { "id": "Ikota", "title": "Ikota" },
+              { "id": "Lafiaji", "title": "Lafiaji" },
+              { "id": "Lekki Phase 1", "title": "Lekki Phase 1" },
+              { "id": "Lekki Phase 2", "title": "Lekki Phase 2" },
+              { "id": "Okun Ajah", "title": "Okun Ajah" },
+              { "id": "Oniru", "title": "Oniru" },
+              { "id": "Orchid", "title": "Orchid" },
+              { "id": "Sangotedo", "title": "Sangotedo" },
+              { "id": "Victoria Island (VI)", "title": "Victoria Island (VI)" },
+              { "id": "Akoka", "title": "Akoka" },
+              { "id": "Alagomeji", "title": "Alagomeji" },
+              { "id": "Allen Avenue (Ikeja)", "title": "Allen Avenue (Ikeja)" },
+              { "id": "Anthony Village", "title": "Anthony Village" },
+              { "id": "Bode Thomas (Surulere)", "title": "Bode Thomas (Surulere)" },
+              { "id": "Ebute Metta", "title": "Ebute Metta" },
+              { "id": "Gbagada Phase 1", "title": "Gbagada Phase 1" },
+              { "id": "Gbagada Phase 2", "title": "Gbagada Phase 2" },
+              { "id": "Ikeja", "title": "Ikeja" },
+              { "id": "Ikeja GRA", "title": "Ikeja GRA" },
+              { "id": "Ilupeju", "title": "Ilupeju" },
+              { "id": "Magodo Phase 1", "title": "Magodo Phase 1" },
+              { "id": "Magodo Phase 2", "title": "Magodo Phase 2" },
+              { "id": "Maryland", "title": "Maryland" },
+              { "id": "Ogudu", "title": "Ogudu" },
+              { "id": "Ogudu GRA", "title": "Ogudu GRA" },
+              { "id": "Omole Phase 1", "title": "Omole Phase 1" },
+              { "id": "Omole Phase 2", "title": "Omole Phase 2" },
+              { "id": "Opebi (Ikeja)", "title": "Opebi (Ikeja)" },
+              { "id": "Oregun", "title": "Oregun" },
+              { "id": "Sabo (Yaba)", "title": "Sabo (Yaba)" },
+              { "id": "Surulere", "title": "Surulere" },
+              { "id": "Yaba", "title": "Yaba" },
+              { "id": "Agege", "title": "Agege" },
+              { "id": "Akowonjo", "title": "Akowonjo" },
+              { "id": "Amuwo-Odofin", "title": "Amuwo-Odofin" },
+              { "id": "Badagry", "title": "Badagry" },
+              { "id": "Berger", "title": "Berger" },
+              { "id": "Egbeda", "title": "Egbeda" },
+              { "id": "Festac Town", "title": "Festac Town" },
+              { "id": "Ifako-Ijaiye", "title": "Ifako-Ijaiye" },
+              { "id": "Ikorodu", "title": "Ikorodu" },
+              { "id": "Ipaja", "title": "Ipaja" },
+              { "id": "Isolo", "title": "Isolo" },
+              { "id": "Mile 2", "title": "Mile 2" },
+              { "id": "Ojodu", "title": "Ojodu" },
+              { "id": "Ojota", "title": "Ojota" },
+              { "id": "Ojo", "title": "Ojo" },
+              { "id": "Okota", "title": "Okota" },
+              { "id": "Oshodi", "title": "Oshodi" }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "budget_min",
+            "label": "Minimum Budget",
+            "required": true,
+            "data-source": [
+              { "id": "50000", "title": "₦50,000" },
+              { "id": "150000", "title": "₦150,000" },
+              { "id": "300000", "title": "₦300,000" },
+              { "id": "500000", "title": "₦500,000" },
+              { "id": "800000", "title": "₦800,000" },
+              { "id": "1200000", "title": "₦1,200,000" },
+              { "id": "2000000", "title": "₦2,000,000" },
+              { "id": "2000000_plus", "title": "₦2,000,000+" }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "budget_max",
+            "label": "Maximum Budget",
+            "required": true,
+            "data-source": [
+              { "id": "150000", "title": "₦150,000" },
+              { "id": "300000", "title": "₦300,000" },
+              { "id": "500000", "title": "₦500,000" },
+              { "id": "800000", "title": "₦800,000" },
+              { "id": "1200000", "title": "₦1,200,000" },
+              { "id": "2000000", "title": "₦2,000,000" },
+              { "id": "2000000_plus", "title": "₦2,000,000+" }
+            ]
+          },
+          {
+            "type": "DatePicker",
+            "name": "expected_move_in_date",
+            "label": "Expected move-in date",
+            "required": true
+          },
+          {
+            "type": "Footer",
+            "label": "Next",
+            "on-click-action": {
+              "name": "navigate",
+              "next": {
+                "type": "screen",
+                "name": "LIFESTYLE_SCREEN"
+              },
+              "payload": {
+                "user_name": "${data.user_name}",
+                "first_name": "${data.first_name}",
+                "last_name": "${data.last_name}",
+                "email": "${data.email}",
+                "gender": "${data.gender}",
+                "age_range": "${data.age_range}",
+                "marital_status": "${data.marital_status}",
+                "religion": "${data.religion}",
+                "state": "${form.state}",
+                "location": "${form.location}",
+                "budget_min": "${form.budget_min}",
+                "budget_max": "${form.budget_max}",
+                "expected_move_in_date": "${form.expected_move_in_date}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "LIFESTYLE_SCREEN",
+      "title": "Lifestyle",
+      "terminal": false,
+      "data": {
+        "user_name": { "type": "string", "__example__": "Eze" },
+        "first_name": { "type": "string", "__example__": "Eze" },
+        "last_name": { "type": "string", "__example__": "Okoro" },
+        "email": { "type": "string", "__example__": "eze@email.com" },
+        "gender": { "type": "string", "__example__": "male" },
+        "age_range": { "type": "string", "__example__": "25-30" },
+        "marital_status": { "type": "string", "__example__": "single" },
+        "religion": { "type": "string", "__example__": "Christianity" },
+        "state": { "type": "string", "__example__": "Lagos" },
+        "location": { "type": "string", "__example__": "Yaba" },
+        "budget_min": { "type": "string", "__example__": "150000" },
+        "budget_max": { "type": "string", "__example__": "300000" },
+        "expected_move_in_date": { "type": "string", "__example__": "2026-09-30" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "*Step 3 of 4* — A few lifestyle details help us match you better.",
+            "markdown": true
+          },
+          {
+            "type": "Dropdown",
+            "name": "occupation",
+            "label": "Occupation",
+            "required": true,
+            "data-source": [
+              { "id": "student", "title": "Student" },
+              { "id": "nysc", "title": "NYSC" },
+              { "id": "working_professional", "title": "Working professional" },
+              { "id": "self_employed", "title": "Self employed" },
+              { "id": "job_seeker", "title": "Job seeker" }
+            ]
+          },
+          {
+            "type": "Dropdown",
+            "name": "smoking_habit",
+            "label": "Smoking habit",
+            "required": true,
+            "data-source": [
+              { "id": "non_smoker", "title": "Non-smoker" },
+              { "id": "occasional_smoker", "title": "Occasional smoker" },
+              { "id": "regular_smoker", "title": "Regular smoker" }
+            ]
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "allows_pets",
+            "label": "Are pets allowed?",
+            "required": true,
+            "data-source": [
+              { "id": "YES", "title": "Yes, pets are welcome" },
+              { "id": "NO", "title": "No pets please" }
+            ]
+          },
+          {
+            "type": "TextInput",
+            "name": "personal_bio",
+            "label": "About yourself",
+            "helper-text": "Tell us a bit about your hobbies & routine",
+            "required": false,
+            "max-chars": 5000
+          },
+          {
+            "type": "Footer",
+            "label": "Next",
+            "on-click-action": {
+              "name": "navigate",
+              "next": {
+                "type": "screen",
+                "name": "CONSENT_SCREEN"
+              },
+              "payload": {
+                "user_name": "${data.user_name}",
+                "first_name": "${data.first_name}",
+                "last_name": "${data.last_name}",
+                "email": "${data.email}",
+                "gender": "${data.gender}",
+                "age_range": "${data.age_range}",
+                "marital_status": "${data.marital_status}",
+                "religion": "${data.religion}",
+                "state": "${data.state}",
+                "location": "${data.location}",
+                "budget_min": "${data.budget_min}",
+                "budget_max": "${data.budget_max}",
+                "expected_move_in_date": "${data.expected_move_in_date}",
+                "occupation": "${form.occupation}",
+                "smoking_habit": "${form.smoking_habit}",
+                "allows_pets": "${form.allows_pets}",
+                "personal_bio": "${form.personal_bio}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "CONSENT_SCREEN",
+      "title": "Review & submit",
+      "terminal": true,
+      "data": {
+        "user_name": { "type": "string", "__example__": "Eze" },
+        "first_name": { "type": "string", "__example__": "Eze" },
+        "last_name": { "type": "string", "__example__": "Okoro" },
+        "email": { "type": "string", "__example__": "eze@email.com" },
+        "gender": { "type": "string", "__example__": "male" },
+        "age_range": { "type": "string", "__example__": "25-30" },
+        "marital_status": { "type": "string", "__example__": "single" },
+        "religion": { "type": "string", "__example__": "Christianity" },
+        "state": { "type": "string", "__example__": "Lagos" },
+        "location": { "type": "string", "__example__": "Yaba" },
+        "budget_min": { "type": "string", "__example__": "150000" },
+        "budget_max": { "type": "string", "__example__": "300000" },
+        "expected_move_in_date": { "type": "string", "__example__": "2026-09-30" },
+        "occupation": { "type": "string", "__example__": "student" },
+        "smoking_habit": { "type": "string", "__example__": "non_smoker" },
+        "allows_pets": { "type": "string", "__example__": "YES" },
+        "personal_bio": { "type": "string", "__example__": "I love meeting new people." }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextBody",
+            "text": "*Step 4 of 4* — Almost done!\n\n📋 *Review your details*\n\n👤 ${data.first_name} ${data.last_name}\n${data.email}\n\n📍 ${data.location}, ${data.state}\n💰 ₦${data.budget_min} – ₦${data.budget_max}\n📅 ${data.expected_move_in_date}",
+            "markdown": true
+          },
+          {
+            "type": "CheckboxGroup",
+            "name": "agreed_to_terms",
+            "label": "Terms & conditions",
+            "required": true,
+            "data-source": [
+              { "id": "AGREE", "title": "I agree to the Terms" }
+            ]
+          },
+          {
+            "type": "Footer",
+            "label": "Submit",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "flow": "registration",
+                "first_name": "${data.first_name}",
+                "last_name": "${data.last_name}",
+                "email": "${data.email}",
+                "gender": "${data.gender}",
+                "age_range": "${data.age_range}",
+                "marital_status": "${data.marital_status}",
+                "religion": "${data.religion}",
+                "state": "${data.state}",
+                "location": "${data.location}",
+                "budget_min": "${data.budget_min}",
+                "budget_max": "${data.budget_max}",
+                "expected_move_in_date": "${data.expected_move_in_date}",
+                "occupation": "${data.occupation}",
+                "smoking_habit": "${data.smoking_habit}",
+                "allows_pets": "${data.allows_pets}",
+                "personal_bio": "${data.personal_bio}",
+                "agreed_to_terms": "${form.agreed_to_terms}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
