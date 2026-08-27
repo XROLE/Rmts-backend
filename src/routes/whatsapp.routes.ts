@@ -5,12 +5,14 @@ import { requireAdmin } from '../middleware/requireAdmin.js';
 import {
   triggerOnboardingSchema,
   triggerMatchSchema,
+  triggerRegistrationSchema,
 } from '../schemas/whatsapp.schema.js';
 import {
   whatsappWebhookGet,
   whatsappWebhookPost,
   triggerOnboarding,
   triggerMatch,
+  triggerRegistration,
 } from '../controllers/whatsapp.controller.js';
 
 const router = Router();
@@ -34,6 +36,12 @@ router.post(
   requireAdmin,
   validate(triggerMatchSchema),
   triggerMatch,
+);
+router.post(
+  '/trigger-registration',
+  requireAdmin,
+  validate(triggerRegistrationSchema),
+  triggerRegistration,
 );
 
 export default router;

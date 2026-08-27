@@ -59,6 +59,17 @@ export const triggerOnboardingSchema = z.object({
   }),
 });
 
+// POST /whatsapp/trigger-registration
+export const triggerRegistrationSchema = z.object({
+  body: z.object({
+    phone: z.string().regex(
+      NIGERIAN_PHONE_REGEX,
+      'Phone must be a valid Nigerian number (e.g. 08131234567 or 2348131234567)',
+    ),
+    name: z.string().min(1, 'Name is required').max(100),
+  }),
+});
+
 // POST /whatsapp/trigger-match
 export const triggerMatchSchema = z.object({
   body: z.object({

@@ -23,8 +23,9 @@ export function whatsappWebhookGet(req: Request, res: Response) {
 /**
  * POST /webhook — inbound events from Meta. Verifies the HMAC signature, then
  * dispatches Flow form submissions (nfm_reply) to the lifecycle engine:
- *   - proceed_decision -> onboarding response
- *   - accept_match     -> match decision
+ *   - flow == registration  -> 4-screen registration form
+ *   - proceed_decision      -> onboarding response
+ *   - accept_match          -> match decision
  */
 export async function whatsappWebhookPost(req: Request, res: Response) {
   const rawBody = (res.locals.rawBody as string | undefined) ?? '';
@@ -59,7 +60,12 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
       }
 
       try {
-        if (typeof responseJson.proceed_decision === 'string') {
+        if (responseJson.flow === 'registration') {
+          await whatsappLifecycleService.handleRegistrationResponse(
+            String(message.from ?? ''),
+            responseJson,
+          );
+        } else if (typeof responseJson.proceed_decision === 'string') {
           await whatsappLifecycleService.handleOnboardingResponse(
             String(message.from ?? ''),
             responseJson,
@@ -95,6 +101,20 @@ export async function triggerOnboarding(req: Request, res: Response) {
   res.status(201).json({
     success: true,
     message: 'Onboarding flow sent successfully',
+    data: result,
+  });
+}
+
+/**
+ * POST /trigger-registration — internal trigger that sends the 4-screen
+ * registration Flow so the user can build their full roommate profile.
+ */
+export async function triggerRegistration(req: Request, res: Response) {
+  const { phone, name } = req.body as { phone: string; name: string };
+  const result = await whatsappLifecycleService.triggerRegistration({ phone, name });
+  res.status(201).json({
+    success: true,
+    message: 'Registration flow sent successfully',
     data: result,
   });
 }
