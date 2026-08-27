@@ -14,8 +14,8 @@ const REGISTRATION_PREFILLED_TEXT =
  * registration. Any message they send triggers the registration Flow.
  */
 export async function getRegistrationLink(_req: Request, res: Response) {
-  const businessPhone = process.env.WHATSAPP_BUSINESS_PHONE_NUMBER;
-  if (!businessPhone) {
+  const businessPhone = (process.env.WHATSAPP_BUSINESS_PHONE_NUMBER ?? '').replace(/\D/g, '');
+  if (businessPhone.length < 8) {
     throw new HttpError(500, 'WHATSAPP_BUSINESS_PHONE_NUMBER is not configured');
   }
 
