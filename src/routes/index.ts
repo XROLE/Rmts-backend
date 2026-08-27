@@ -6,7 +6,6 @@ import supportRoutes from './support.routes.js';
 import paymentRoutes from './payment.routes.js';
 import matchRoutes from './match.routes.js';
 import whatsappRoutes from './whatsapp.routes.js';
-import flowExchangeRoutes from './flowExchange.routes.js';
 
 const router = Router();
 
@@ -21,6 +20,5 @@ router.use('/support', supportRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/matches', matchRoutes);
 router.use('/whatsapp', whatsappRoutes);
-router.use('/flows', flowExchangeRoutes);
 
 export default router;

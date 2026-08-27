@@ -27,6 +27,8 @@ const MATCH_PAYMENT_AMOUNT_NGN = Number(
 const PAYMENT_RETURN_URL = process.env.PAYMENT_RETURN_URL;
 const REPLACEMENT_FORM_BASE_URL =
   process.env.REPLACEMENT_FORM_BASE_URL ?? 'https://roommate.ng/request-replacement';
+/** Minimum gap between automatic registration Flow sends to the same phone. */
+const REGISTRATION_RESEND_WINDOW_MS = 15 * 60 * 1000;
 
 const DECLINE_REASONS = [
   'BUDGET_MISMATCH',
@@ -110,10 +112,8 @@ export class WhatsAppLifecycleService {
       body: 'Confirm your roommate search below. It only takes a few seconds.',
       flowToken,
       screen: 'CONFIRM_SEARCH_SCREEN',
-      initialData: { user_name: input.name, phone: phoneE164 },
+      initialData: { user_name: input.name },
     });
-
-    await this.recordFlowSession(flowToken, phoneE164, FLOW_ONBOARDING_ID, 'CONFIRM_SEARCH_SCREEN');
 
     return { phone: phoneE164, flowToken };
   }
@@ -166,11 +166,8 @@ export class WhatsAppLifecycleService {
       initialData: {
         candidate_summary: summary,
         compatibility_score: String(input.compatibilityScore),
-        phone: phoneE164,
       },
     });
-
-    await this.recordFlowSession(match.flow_token!, phoneE164, FLOW_MATCH_ID, 'MATCH_DECISION_SCREEN');
 
     return { matchId: match.id, flowToken: match.flow_token! };
   }
@@ -181,32 +178,70 @@ export class WhatsAppLifecycleService {
    * handleRegistrationResponse.
    */
   async triggerRegistration(input: { phone: string; name: string }) {
-    if (!FLOW_REGISTRATION_ID) {
-      throw new HttpError(500, 'WHATSAPP_FLOW_REGISTRATION_ID is not configured');
-    }
-
     const phoneE164 = normalizePhoneToE164(input.phone);
     if (!phoneE164) {
       throw new HttpError(400, 'A valid Nigerian phone number is required');
     }
 
-    await this.ensureUser(phoneE164, input.name);
+    const flowToken = await this.sendRegistrationFlow(phoneE164, input.name);
+
+    return { phone: phoneE164, flowToken };
+  }
+
+  /**
+   * Automatically sends the registration Flow to a user who has messaged the
+   * business number on WhatsApp (e.g. after tapping the wa.me link on the
+   * website). Never sends more than once per window and never re-registers
+   * an existing profile:
+   *   - already_registered -> a roommate_profiles row exists
+   *   - recently_sent      -> an outbound registration Flow was sent within
+   *                           REGISTRATION_RESEND_WINDOW_MS
+   *   - register           -> a fresh Flow message was sent
+   */
+  async autoSendRegistrationFlow(
+    phoneE164: string,
+    name?: string,
+  ): Promise<'register' | 'already_registered' | 'recently_sent'> {
+    if (!normalizePhoneToE164(phoneE164)) {
+      console.warn('[whatsapp] autoSendRegistrationFlow ignored for invalid phone', { phoneE164 });
+      return 'already_registered';
+    }
+
+    if (!FLOW_REGISTRATION_ID) {
+      throw new HttpError(500, 'WHATSAPP_FLOW_REGISTRATION_ID is not configured');
+    }
+
+    const existing = await this.findProfileByPhone(phoneE164);
+    if (existing) return 'already_registered';
+
+    const recentlySent = await this.registrationFlowSentRecently(phoneE164);
+    if (recentlySent) return 'recently_sent';
+
+    await this.sendRegistrationFlow(phoneE164, name ?? 'Friend');
+    return 'register';
+  }
+
+  /** Sends the registration Flow message to an identified phone. */
+  private async sendRegistrationFlow(phoneE164: string, name: string): Promise<string> {
+    if (!FLOW_REGISTRATION_ID) {
+      throw new HttpError(500, 'WHATSAPP_FLOW_REGISTRATION_ID is not configured');
+    }
+
+    await this.ensureUser(phoneE164, name);
 
     const flowToken = randomUUID();
     await whatsappService.sendFlowMessage({
       to: phoneE164,
       flowId: FLOW_REGISTRATION_ID,
       cta: 'Start registration',
-      header: `Welcome, ${input.name.split(' ')[0]}!`,
+      header: `Welcome, ${name.split(' ')[0]}!`,
       body: 'Let\u2019s set up your roommate profile. It only takes about 2 minutes.',
       flowToken,
       screen: 'PERSONAL_SCREEN',
-      initialData: { user_name: input.name, phone: phoneE164 },
+      initialData: { user_name: name },
     });
 
-    await this.recordFlowSession(flowToken, phoneE164, FLOW_REGISTRATION_ID, 'PERSONAL_SCREEN');
-
-    return { phone: phoneE164, flowToken };
+    return flowToken;
   }
 
   // ---------------------------------------------------------------
@@ -392,51 +427,28 @@ export class WhatsAppLifecycleService {
   // ---------------------------------------------------------------
 
   /**
-   * Resolves the originating phone for a flow_token. Used by the Data
-   * Exchange endpoint, which receives submissions without a sender phone.
-   * Looks up the flow_sessions mapping first, falling back to the match's
-   * user_phone when the token corresponds to a proposed match.
+   * True when an outbound registration Flow was sent to the phone within
+   * REGISTRATION_RESEND_WINDOW_MS — used to avoid re-sending the form on
+   * every inbound message.
    */
-  async getPhoneByFlowToken(flowToken: string): Promise<string | null> {
+  private async registrationFlowSentRecently(phoneE164: string): Promise<boolean> {
     const { data, error } = await supabase
-      .from('flow_sessions')
-      .select('phone')
-      .eq('flow_token', flowToken)
+      .from('whatsapp_messages')
+      .select('created_at')
+      .eq('phone', phoneE164)
+      .eq('direction', 'outbound')
+      .eq('message_type', 'interactive')
+      .gte('created_at', new Date(Date.now() - REGISTRATION_RESEND_WINDOW_MS).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
-
-    if (!error && data?.phone) {
-      return (data as { phone: string }).phone;
-    }
-
-    const { data: match } = await supabase
-      .from('matches')
-      .select('user_phone')
-      .eq('flow_token', flowToken)
-      .maybeSingle();
-
-    return (match?.user_phone as string | null) ?? null;
-  }
-
-  /** Upserts the flow_sessions mapping so a flow_token can be attributed to its sender. */
-  private async recordFlowSession(
-    flowToken: string,
-    phoneE164: string,
-    flowId: string,
-    screen: string,
-  ) {
-    const { error } = await supabase.from('flow_sessions').upsert(
-      {
-        flow_token: flowToken,
-        phone: phoneE164,
-        flow_id: flowId,
-        screen,
-      },
-      { onConflict: 'flow_token' },
-    );
 
     if (error) {
-      console.error('[whatsapp] failed to record flow session:', error.message);
+      console.error('[whatsapp] failed to check recent registration send:', error.message);
+      return false;
     }
+
+    return Boolean(data);
   }
 
   /** Finds or creates the users row for a WhatsApp-led phone identity. */

@@ -1,6 +1,5 @@
 {
   "version": "6.0",
-  "endpoint": "https://rmts-backend.onrender.com/api/v1/flows/endpoint",
   "screens": [
     {
       "id": "CONFIRM_SEARCH_SCREEN",

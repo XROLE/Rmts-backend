@@ -1,7 +1,31 @@
 import { Request, Response } from 'express';
+import { HttpError } from '../middleware/errorHandler.js';
 import { whatsappService } from '../services/whatsapp.service.js';
 import { whatsappLifecycleService } from '../services/whatsappLifecycle.service.js';
 import type { TriggerMatchInput } from '../services/whatsappLifecycle.service.js';
+import { normalizePhoneToE164 } from '../utils/normalizePhone.js';
+
+const REGISTRATION_PREFILLED_TEXT =
+  "Hi, I'd like to register for a roommate match.";
+
+/**
+ * GET /registration-link — public: returns the wa.me deep link the website
+ * uses to send users into the Roommates NG WhatsApp chat to start
+ * registration. Any message they send triggers the registration Flow.
+ */
+export async function getRegistrationLink(_req: Request, res: Response) {
+  const businessPhone = process.env.WHATSAPP_BUSINESS_PHONE_NUMBER;
+  if (!businessPhone) {
+    throw new HttpError(500, 'WHATSAPP_BUSINESS_PHONE_NUMBER is not configured');
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      url: `https://wa.me/${businessPhone}?text=${encodeURIComponent(REGISTRATION_PREFILLED_TEXT)}`,
+    },
+  });
+}
 
 /**
  * GET /webhook — Meta's webhook verification handshake. Echoes hub.challenge
@@ -41,7 +65,44 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
 
   for (const change of changes) {
     const messages = change?.value?.messages ?? [];
+    const contacts = change?.value?.contacts ?? [];
+    const contactName = (contacts?.[0]?.profile?.name as string | undefined) ?? 'Friend';
+
     for (const message of messages) {
+      const from = String(message.from ?? '');
+
+      // Plain-text inbound message (e.g. after tapping the wa.me link on the
+      // website): auto-send the registration Flow to an unregistered user.
+      if (message?.type === 'text') {
+        try {
+          const phoneE164 = normalizePhoneToE164(from);
+          if (!phoneE164) {
+            console.warn('[whatsapp] ignored text message without a valid sender phone');
+            continue;
+          }
+
+          const action = await whatsappLifecycleService.autoSendRegistrationFlow(
+            phoneE164,
+            contactName,
+          );
+
+          if (action === 'already_registered') {
+            await whatsappService.sendText(
+              phoneE164,
+              "You're all set with Roommates NG — your profile is already active. We'll ping you here on WhatsApp when we find a compatible roommate.",
+            );
+          } else if (action === 'recently_sent') {
+            await whatsappService.sendText(
+              phoneE164,
+              "I just sent you the registration form — please fill it in 😊",
+            );
+          }
+        } catch (err) {
+          console.error('[whatsapp] auto registration flow failed:', err);
+        }
+        continue;
+      }
+
       const nfmReply =
         message?.type === 'interactive' &&
         message?.interactive?.type === 'nfm_reply' &&
