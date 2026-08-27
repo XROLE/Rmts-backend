@@ -55,7 +55,14 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
   const rawBody = (res.locals.rawBody as string | undefined) ?? '';
   const signature = req.headers['x-hub-signature-256'] as string | undefined;
 
-  if (!whatsappService.verifyWebhookSignature(rawBody, signature)) {
+  const validSignature = whatsappService.verifyWebhookSignature(rawBody, signature);
+  console.log('[whatsapp] webhook received', {
+    validSignature,
+    hasSignature: Boolean(signature),
+  });
+
+  if (!validSignature) {
+    console.warn('[whatsapp] webhook signature rejected');
     res.status(401).json({ success: false, message: 'Invalid webhook signature' });
     return;
   }
@@ -85,6 +92,7 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
             phoneE164,
             contactName,
           );
+          console.log(`[whatsapp] text from ${phoneE164} -> ${action}`);
 
           if (action === 'already_registered') {
             await whatsappService.sendText(
