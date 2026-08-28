@@ -146,14 +146,21 @@ export class WhatsAppService {
 
     const body = (await res.json().catch(() => ({}))) as {
       messages?: Array<{ id?: string }>;
-      error?: { message?: string; code?: number; error_subcode?: number; fbtrace_id?: string };
+      error?: {
+        message?: string;
+        code?: number;
+        error_subcode?: number;
+        fbtrace_id?: string;
+        error_data?: { details?: string };
+      };
     };
 
     if (!res.ok) {
-      const { code, error_subcode, message, fbtrace_id } = body.error ?? {};
+      const { code, error_subcode, message, fbtrace_id, error_data } = body.error ?? {};
+      const detail = error_data?.details ? ` | details: ${error_data.details}` : '';
       throw new HttpError(
         502,
-        `WhatsApp send failed (HTTP ${res.status}${code ? ` code=${code}` : ''}${error_subcode ? ` subcode=${error_subcode}` : ''}): ${message ?? 'unknown error'}` +
+        `WhatsApp send failed (HTTP ${res.status}${code ? ` code=${code}` : ''}${error_subcode ? ` subcode=${error_subcode}` : ''}): ${message ?? 'unknown error'}${detail}` +
           (fbtrace_id ? ` [fbtrace: ${fbtrace_id}]` : ''),
       );
     }
