@@ -74,7 +74,7 @@ export class WhatsAppService {
       interactive: {
         type: 'flow',
         header: { type: 'text', text: input.header ?? input.cta },
-        body: { type: 'text', text: input.body },
+        body: { text: input.body },
         action: {
           name: 'flow',
           parameters: {
@@ -108,7 +108,7 @@ export class WhatsAppService {
       interactive: {
         type: 'cta_url',
         ...(input.header ? { header: { type: 'text', text: input.header } } : {}),
-        body: { type: 'text', text: input.body },
+        body: { text: input.body },
         action: {
           name: 'cta_url',
           parameters: {
@@ -146,13 +146,15 @@ export class WhatsAppService {
 
     const body = (await res.json().catch(() => ({}))) as {
       messages?: Array<{ id?: string }>;
-      error?: { message?: string };
+      error?: { message?: string; code?: number; error_subcode?: number; fbtrace_id?: string };
     };
 
     if (!res.ok) {
+      const { code, error_subcode, message, fbtrace_id } = body.error ?? {};
       throw new HttpError(
         502,
-        `WhatsApp send failed: ${body.error?.message ?? `HTTP ${res.status}`}`,
+        `WhatsApp send failed (HTTP ${res.status}${code ? ` code=${code}` : ''}${error_subcode ? ` subcode=${error_subcode}` : ''}): ${message ?? 'unknown error'}` +
+          (fbtrace_id ? ` [fbtrace: ${fbtrace_id}]` : ''),
       );
     }
 
