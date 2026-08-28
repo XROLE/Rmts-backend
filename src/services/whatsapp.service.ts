@@ -41,6 +41,13 @@ interface SendCtaUrlInput {
   header?: string;
 }
 
+interface SendTemplateInput {
+  to: string;
+  name: string;
+  language: string;
+  bodyParams?: string[];
+}
+
 /**
  * Thin client for the Meta WhatsApp Business Cloud API. Handles text
  * messages, interactive Flow messages and CTA URL buttons, and verifies
@@ -119,6 +126,35 @@ export class WhatsAppService {
         },
       },
     };
+    const { wamId } = await this.postMessage(input.to, message);
+    return { wamId };
+  }
+
+  /**
+   * Sends an approved message template (used as the registration greeting
+   * until the interactive Flow is published). Body params fill the template's
+   * {{N}} placeholders; no buttons/URLs are attached.
+   */
+  async sendTemplate(input: SendTemplateInput) {
+    const message: Record<string, unknown> = {
+      messaging_product: 'whatsapp',
+      to: input.to,
+      type: 'template',
+      template: {
+        name: input.name,
+        language: { code: input.language },
+      },
+    };
+
+    if (input.bodyParams?.length) {
+      (message.template as Record<string, unknown>).components = [
+        {
+          type: 'body',
+          parameters: input.bodyParams.map((p) => ({ type: 'text', text: p })),
+        },
+      ];
+    }
+
     const { wamId } = await this.postMessage(input.to, message);
     return { wamId };
   }

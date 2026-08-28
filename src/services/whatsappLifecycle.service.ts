@@ -10,6 +10,16 @@ const FLOW_ONBOARDING_ID = process.env.WHATSAPP_FLOW_ONBOARDING_ID ?? '';
 const FLOW_MATCH_ID = process.env.WHATSAPP_FLOW_MATCH_ID ?? '';
 const FLOW_REGISTRATION_ID = process.env.WHATSAPP_FLOW_REGISTRATION_ID ?? '';
 
+/** 'flow' sends the interactive Flow; 'template' sends an approved message template. */
+const REGISTRATION_CHANNEL = process.env.WHATSAPP_REGISTRATION_CHANNEL ?? 'flow';
+const REGISTRATION_TEMPLATE_NAME =
+  process.env.WHATSAPP_REGISTRATION_TEMPLATE_NAME ?? 'hello_world';
+const REGISTRATION_TEMPLATE_LANG = process.env.WHATSAPP_REGISTRATION_TEMPLATE_LANG ?? 'en';
+/** Number of {{N}} body placeholders to fill with the user's name (0 = send none). */
+const REGISTRATION_TEMPLATE_PARAMS = Number(
+  process.env.WHATSAPP_REGISTRATION_TEMPLATE_PARAMS ?? 0,
+);
+
 const REGISTRATION_GENDERS = ['male', 'female'] as const;
 const REGISTRATION_MARITAL_STATUS = ['single', 'married', 'divorced'] as const;
 const REGISTRATION_RELIGIONS = ['Christianity', 'Islam', 'Others'] as const;
@@ -189,14 +199,19 @@ export class WhatsAppLifecycleService {
   }
 
   /**
-   * Automatically sends the registration Flow to a user who has messaged the
-   * business number on WhatsApp (e.g. after tapping the wa.me link on the
-   * website). Never sends more than once per window and never re-registers
-   * an existing profile:
+   * Automatically sends the registration invitation to a user who has messaged
+   * the business number on WhatsApp (e.g. after tapping the wa.me link on the
+   * website). Never sends more than once per window and never re-registers an
+   * existing profile:
    *   - already_registered -> a roommate_profiles row exists
-   *   - recently_sent      -> an outbound registration Flow was sent within
+   *   - recently_sent      -> a registration invite was sent within
    *                           REGISTRATION_RESEND_WINDOW_MS
-   *   - register           -> a fresh Flow message was sent
+   *   - register           -> a fresh registration invite was sent
+   *
+   * Channel is controlled by WHATSAPP_REGISTRATION_CHANNEL:
+   *   'flow'     -> interactive registration Flow (default)
+   *   'template' -> approved message template (WHATSAPP_REGISTRATION_TEMPLATE_NAME),
+   *                 no account/profile created and no URL sent
    */
   async autoSendRegistrationFlow(
     phoneE164: string,
@@ -207,18 +222,36 @@ export class WhatsAppLifecycleService {
       return 'already_registered';
     }
 
-    if (!FLOW_REGISTRATION_ID) {
-      throw new HttpError(500, 'WHATSAPP_FLOW_REGISTRATION_ID is not configured');
-    }
-
     const existing = await this.findProfileByPhone(phoneE164);
     if (existing) return 'already_registered';
 
     const recentlySent = await this.registrationFlowSentRecently(phoneE164);
     if (recentlySent) return 'recently_sent';
 
-    await this.sendRegistrationFlow(phoneE164, name ?? 'Friend');
+    if (REGISTRATION_CHANNEL === 'template') {
+      await this.sendRegistrationTemplate(phoneE164, name ?? 'Friend');
+    } else {
+      if (!FLOW_REGISTRATION_ID) {
+        throw new HttpError(500, 'WHATSAPP_FLOW_REGISTRATION_ID is not configured');
+      }
+      await this.sendRegistrationFlow(phoneE164, name ?? 'Friend');
+    }
     return 'register';
+  }
+
+  /** Sends the approved registration template (no URL, no account creation). */
+  private async sendRegistrationTemplate(phoneE164: string, name: string) {
+    const bodyParams =
+      REGISTRATION_TEMPLATE_PARAMS > 0
+        ? Array.from({ length: REGISTRATION_TEMPLATE_PARAMS }, () => name.split(' ')[0])
+        : undefined;
+
+    await whatsappService.sendTemplate({
+      to: phoneE164,
+      name: REGISTRATION_TEMPLATE_NAME,
+      language: REGISTRATION_TEMPLATE_LANG,
+      bodyParams,
+    });
   }
 
   /** Sends the registration Flow message to an identified phone. */
@@ -427,28 +460,48 @@ export class WhatsAppLifecycleService {
   // ---------------------------------------------------------------
 
   /**
-   * True when an outbound registration Flow was sent to the phone within
-   * REGISTRATION_RESEND_WINDOW_MS — used to avoid re-sending the form on
-   * every inbound message.
+   * True when a registration invite (interactive Flow or the registration
+   * template) was sent to the phone within REGISTRATION_RESEND_WINDOW_MS —
+   * used to avoid re-sending the invitation on every inbound message.
    */
   private async registrationFlowSentRecently(phoneE164: string): Promise<boolean> {
-    const { data, error } = await supabase
+    const windowStart = new Date(Date.now() - REGISTRATION_RESEND_WINDOW_MS).toISOString();
+
+    const { data: interactive, error: interactiveError } = await supabase
       .from('whatsapp_messages')
       .select('created_at')
       .eq('phone', phoneE164)
       .eq('direction', 'outbound')
       .eq('message_type', 'interactive')
-      .gte('created_at', new Date(Date.now() - REGISTRATION_RESEND_WINDOW_MS).toISOString())
+      .gte('created_at', windowStart)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (error) {
-      console.error('[whatsapp] failed to check recent registration send:', error.message);
+    if (interactiveError) {
+      console.error('[whatsapp] failed to check recent registration send:', interactiveError.message);
+      return false;
+    }
+    if (interactive) return true;
+
+    const { data: template, error: templateError } = await supabase
+      .from('whatsapp_messages')
+      .select('created_at')
+      .eq('phone', phoneE164)
+      .eq('direction', 'outbound')
+      .eq('message_type', 'template')
+      .contains('payload', { template: { name: REGISTRATION_TEMPLATE_NAME } })
+      .gte('created_at', windowStart)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (templateError) {
+      console.error('[whatsapp] failed to check recent registration send:', templateError.message);
       return false;
     }
 
-    return Boolean(data);
+    return Boolean(template);
   }
 
   /** Finds or creates the users row for a WhatsApp-led phone identity. */
