@@ -14,7 +14,7 @@ const FLOW_REGISTRATION_ID = process.env.WHATSAPP_FLOW_REGISTRATION_ID ?? '';
 const REGISTRATION_CHANNEL = process.env.WHATSAPP_REGISTRATION_CHANNEL ?? 'flow';
 const REGISTRATION_TEMPLATE_NAME =
   process.env.WHATSAPP_REGISTRATION_TEMPLATE_NAME ?? 'hello_world';
-const REGISTRATION_TEMPLATE_LANG = process.env.WHATSAPP_REGISTRATION_TEMPLATE_LANG ?? 'en';
+const REGISTRATION_TEMPLATE_LANG = process.env.WHATSAPP_REGISTRATION_TEMPLATE_LANG ?? 'en_US';
 /** Number of {{N}} body placeholders to fill with the user's name (0 = send none). */
 const REGISTRATION_TEMPLATE_PARAMS = Number(
   process.env.WHATSAPP_REGISTRATION_TEMPLATE_PARAMS ?? 0,
