@@ -239,6 +239,22 @@ export class WhatsAppLifecycleService {
     return 'register';
   }
 
+  /**
+   * Sends the registration invitation immediately, without the 15-minute
+   * dedup guard. Used by the Sido bot when a user explicitly asks to
+   * register. Channel is governed by WHATSAPP_REGISTRATION_CHANNEL.
+   */
+  async sendRegistrationInvite(phoneE164: string, name?: string): Promise<void> {
+    if (REGISTRATION_CHANNEL === 'template') {
+      await this.sendRegistrationTemplate(phoneE164, name ?? 'Friend');
+    } else {
+      if (!FLOW_REGISTRATION_ID) {
+        throw new HttpError(500, 'WHATSAPP_FLOW_REGISTRATION_ID is not configured');
+      }
+      await this.sendRegistrationFlow(phoneE164, name ?? 'Friend');
+    }
+  }
+
   /** Sends the approved registration template (no URL, no account creation). */
   private async sendRegistrationTemplate(phoneE164: string, name: string) {
     const bodyParams =

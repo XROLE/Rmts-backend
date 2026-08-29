@@ -6,6 +6,7 @@ import {
   triggerOnboardingSchema,
   triggerMatchSchema,
   triggerRegistrationSchema,
+  resumeBotSchema,
 } from '../schemas/whatsapp.schema.js';
 import {
   whatsappWebhookGet,
@@ -14,6 +15,8 @@ import {
   triggerOnboarding,
   triggerMatch,
   triggerRegistration,
+  resumeBot,
+  listBotConversations,
 } from '../controllers/whatsapp.controller.js';
 
 const router = Router();
@@ -47,5 +50,9 @@ router.post(
   validate(triggerRegistrationSchema),
   triggerRegistration,
 );
+
+// Sido bot administration (admin only): answer/resume human handovers.
+router.post('/bot/resume', requireAdmin, validate(resumeBotSchema), resumeBot);
+router.get('/bot/conversations', requireAdmin, listBotConversations);
 
 export default router;

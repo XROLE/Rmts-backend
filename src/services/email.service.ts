@@ -71,6 +71,57 @@ export class EmailService {
     });
   }
 
+  /**
+   * Notifies the support inbox that Sido handed a WhatsApp conversation over
+   * to a human agent. Best effort and fire-and-forget, matching the support
+   * ticket pattern.
+   */
+  async sendHumanHandover(payload: {
+    phone: string;
+    name: string;
+    summary: string;
+  }): Promise<void> {
+    const supportEmail =
+      process.env.SUPPORT_EMAIL ?? 'urbannest.quick.support@gmail.com';
+
+    const subject = process.env.SIDO_HANDOVER_SUBJECT ?? 'WhatsApp handover';
+
+    const text = [
+      `Sido handed a WhatsApp conversation over to a human agent`,
+      ``,
+      `User name: ${payload.name}`,
+      `WhatsApp number: ${payload.phone}`,
+      ``,
+      `Summary: ${payload.summary || '(no summary provided)'}`,
+      ``,
+      `Reply to the user directly from the business WhatsApp number, then clear`,
+      `the handover via POST /api/v1/whatsapp/bot/resume (phone = ${payload.phone}).`,
+    ]
+      .filter((line) => line !== '')
+      .join('\n');
+
+    const html = `
+      <h2>Sido — WhatsApp handover</h2>
+      <p><strong>User name:</strong> ${this.escapeHtml(payload.name)}</p>
+      <p><strong>WhatsApp number:</strong> ${this.escapeHtml(payload.phone)}</p>
+      <p><strong>Summary:</strong></p>
+      <pre>${this.escapeHtml(payload.summary || '(no summary provided)')}</pre>
+      <p>Reply to the user directly from the business WhatsApp number, then clear
+      the handover via <code>POST /api/v1/whatsapp/bot/resume</code>
+      (phone = ${this.escapeHtml(payload.phone)}).</p>
+    `;
+
+    await this.transporter.sendMail({
+      from: process.env.SMTP_USER
+        ? `"Roommate NG" <${process.env.SMTP_USER}>`
+        : supportEmail,
+      to: supportEmail,
+      subject: `[${subject}] ${payload.name} (${payload.phone})`,
+      text,
+      html,
+    });
+  }
+
   private escapeHtml(value: string): string {
     return value
       .replace(/&/g, '&amp;')

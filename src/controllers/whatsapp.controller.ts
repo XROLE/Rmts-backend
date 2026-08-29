@@ -1,8 +1,10 @@
 import { Request, Response } from 'express';
 import { HttpError } from '../middleware/errorHandler.js';
+import { supabase } from '../config/supabase.js';
 import { whatsappService } from '../services/whatsapp.service.js';
 import { whatsappLifecycleService } from '../services/whatsappLifecycle.service.js';
 import type { TriggerMatchInput } from '../services/whatsappLifecycle.service.js';
+import { sidoBotService } from '../services/sidoBot.service.js';
 import { normalizePhoneToE164 } from '../utils/normalizePhone.js';
 
 const REGISTRATION_PREFILLED_TEXT =
@@ -78,16 +80,55 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
     for (const message of messages) {
       const from = String(message.from ?? '');
 
-      // Plain-text inbound message (e.g. after tapping the wa.me link on the
-      // website): auto-send the registration Flow to an unregistered user.
+      // Plain-text inbound message. A text message opens (or stays inside) the
+      // 24-hour customer service window, so we may reply with free-form content.
       if (message?.type === 'text') {
-        try {
-          const phoneE164 = normalizePhoneToE164(from);
-          if (!phoneE164) {
-            console.warn('[whatsapp] ignored text message without a valid sender phone');
+        const phoneE164 = normalizePhoneToE164(from);
+        if (!phoneE164) {
+          console.warn('[whatsapp] ignored text message without a valid sender phone');
+          continue;
+        }
+
+        // Dedup + audit inbound delivery via whatsapp_messages (wam_id PK). If the
+        // row already exists Meta re-delivered this message, so skip it.
+        const messageId = String(message.id ?? '');
+        if (messageId) {
+          const { data: inserted, error: logError } = await supabase
+            .from('whatsapp_messages')
+            .upsert(
+              {
+                wam_id: messageId,
+                phone: phoneE164,
+                direction: 'inbound',
+                message_type: message.type,
+                payload: { text: message.text?.body ?? '', profile_name: contactName },
+              },
+              { onConflict: 'wam_id', ignoreDuplicates: true },
+            )
+            .select('wam_id');
+
+          if (logError) {
+            console.error('[whatsapp] failed to log inbound message:', logError.message);
+          } else if (!inserted || inserted.length === 0) {
+            console.log(`[whatsapp] duplicate delivery skipped: ${messageId}`);
             continue;
           }
+        }
 
+        const text = String(message.text?.body ?? '');
+
+        // Sido (AI assistant) takes over conversational replies whenever it is
+        // configured. Process in the background so Meta's webhook ACKs instantly.
+        if (sidoBotService.enabled) {
+          console.log(`[whatsapp] text from ${phoneE164} -> sido bot`);
+          void sidoBotService
+            .handleInboundText(phoneE164, contactName, text)
+            .catch((err) => console.error('[whatsapp] sido bot failed:', err));
+          continue;
+        }
+
+        // Fallback (bot disabled or key missing): legacy greeting/dedup path.
+        try {
           const action = await whatsappLifecycleService.autoSendRegistrationFlow(
             phoneE164,
             contactName,
@@ -200,4 +241,48 @@ export async function triggerMatch(req: Request, res: Response) {
     message: 'Match flow sent successfully',
     data: result,
   });
+}
+
+/**
+ * POST /bot/resume — admin. Re-enables Sido for a conversation after a human
+ * agent has finished replying to the user from the business number.
+ */
+export async function resumeBot(req: Request, res: Response) {
+  const { phone } = req.body as { phone: string };
+  const phoneE164 = normalizePhoneToE164(phone);
+  if (!phoneE164) {
+    throw new HttpError(400, 'A valid Nigerian phone number is required');
+  }
+
+  await sidoBotService.resumeConversation(phoneE164);
+  res.status(200).json({
+    success: true,
+    message: 'Bot resumed for this conversation',
+  });
+}
+
+/**
+ * GET /bot/conversations — admin. Lists Sido <-> user handovers so agents can
+ * follow up on chats flagged for human assistance.
+ */
+export async function listBotConversations(req: Request, res: Response) {
+  const { status } = req.query as { status?: string };
+
+  let query = supabase
+    .from('sido_human_handovers')
+    .select('id, phone, summary, status, created_at, resolved_at')
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  if (status === 'open' || status === 'resolved') {
+    query = query.eq('status', status);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new HttpError(500, `Failed to list handovers: ${error.message}`);
+  }
+
+  res.status(200).json({ success: true, data: data ?? [] });
 }

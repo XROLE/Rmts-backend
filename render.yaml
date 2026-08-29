@@ -22,3 +22,5 @@ services:
       - key: CORS_ORIGIN
         value: '*'
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false

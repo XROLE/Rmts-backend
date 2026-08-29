@@ -70,6 +70,16 @@ export const triggerRegistrationSchema = z.object({
   }),
 });
 
+// POST /whatsapp/bot/resume
+export const resumeBotSchema = z.object({
+  body: z.object({
+    phone: z.string().regex(
+      NIGERIAN_PHONE_REGEX,
+      'Phone must be a valid Nigerian number (e.g. 08131234567 or 2348131234567)',
+    ),
+  }),
+});
+
 // POST /whatsapp/trigger-match
 export const triggerMatchSchema = z.object({
   body: z.object({
