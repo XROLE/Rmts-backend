@@ -2,7 +2,6 @@ import 'dotenv/config';
 import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { whatsappService } from './whatsapp.service.js';
-import { whatsappLifecycleService } from './whatsappLifecycle.service.js';
 import { emailService } from './email.service.js';
 import { SIDO_SYSTEM_PROMPT, SIDO_TOOLS } from '../knowledge/sido.js';
 
@@ -12,10 +11,18 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
 const OPENAI_TEMPERATURE = Number(process.env.OPENAI_TEMPERATURE ?? 0.7);
 const OPENAI_MAX_TOKENS = Number(process.env.OPENAI_MAX_TOKENS ?? 300);
 const SIDO_MAX_HISTORY = Number(process.env.SIDO_MAX_HISTORY ?? 30);
+const SIDO_REGISTRATION_URL =
+  process.env.SIDO_REGISTRATION_URL ?? 'https://urban-nest-tawny.vercel.app/';
+/** When true, a human handover pauses Sido for that phone until resumed. */
+const SIDO_HANDOVER_PAUSE_BOT = process.env.SIDO_HANDOVER_PAUSE_BOT === 'true';
+/** Stale handovers auto-resume the bot after this window. */
+const SIDO_HANDOVER_AUTO_RESUME_MS =
+  Number(process.env.SIDO_HANDOVER_AUTO_RESUME_HOURS ?? 24) * 60 * 60 * 1000;
 
 interface ConversationRow {
   phone: string;
   handed_off: boolean;
+  handed_off_at: string | null;
 }
 
 interface HistoryMessage {
@@ -29,9 +36,11 @@ interface HistoryMessage {
  * Engages free-form text conversations with users who message the business
  * number. Conversation history is stored in sido_messages and trimmed to the
  * latest N messages per call. The model may trigger two tools:
- *   - send_registration_invite  -> pushes the registration form on request
- *   - request_human_handover    -> soft handover to a human agent ("Sido pauses,
- *                                  a person replies from the business number")
+ *   - send_registration_invite  -> sends a CTA button linking to the website
+ *                                  profile-creation page
+ *   - request_human_handover    -> notifies support of a soft handover; the bot
+ *                                  keeps replying unless SIDO_HANDOVER_PAUSE_BOT
+ *                                  is enabled (then it pauses until resumed)
  *
  * The bot never runs on a timer — it only ever replies immediately after an
  * inbound message, which is always inside the user's open 24-hour window.
@@ -47,10 +56,16 @@ export class SidoBotService {
     await this.logMessage(phoneE164, 'user', text);
     await this.touchConversation(phoneE164);
 
-    // A human agent owns this chat now — stay silent so we don't talk over them.
-    if (conversation.handed_off) {
-      console.log(`[sido] ${phoneE164} is handed off to a human; bot stays silent`);
-      return;
+    // When handover pausing is on, a human agent owns a handed-off chat and
+    // Sido stays silent — except stale handovers auto-resume so chats never die.
+    if (SIDO_HANDOVER_PAUSE_BOT && conversation.handed_off) {
+      if (this.isHandoverStale(conversation)) {
+        await this.resumeConversation(phoneE164);
+        console.log(`[sido] ${phoneE164} handover stale; bot auto-resumed`);
+      } else {
+        console.log(`[sido] ${phoneE164} is handed off to a human; bot stays silent`);
+        return;
+      }
     }
 
     const history = await this.loadHistory(phoneE164, SIDO_MAX_HISTORY);
@@ -174,11 +189,17 @@ ${status}`;
   ): Promise<string> {
     if (toolName === 'send_registration_invite') {
       try {
-        await whatsappLifecycleService.sendRegistrationInvite(phoneE164, name || 'Friend');
-        return "I've just sent you the registration form — tap it and fill it in. It takes about 2 minutes and that's all you need to get started 😊";
+        await whatsappService.sendCtaUrlButton({
+          to: phoneE164,
+          displayText: 'Create your profile',
+          url: SIDO_REGISTRATION_URL,
+          header: 'Create your profile 🏠',
+          body: 'Set up your Roommates NG profile on the website — it takes under 2 minutes.',
+        });
+        return "I've sent you the link to create your profile 👆 Tap 'Create your profile' to get started 😊";
       } catch (err) {
-        console.error('[sido] failed to send registration invite:', err);
-        return "Sorry, I couldn't send the registration form just now 🙈 Please try again in a moment, or type 'talk to human' if you'd like a person to help you.";
+        console.error('[sido] failed to send registration link:', err);
+        return "Sorry, I couldn't send the registration link just now 🙈 Please try again in a moment, or type 'talk to human' if you'd like a person to help you.";
       }
     }
 
@@ -198,10 +219,15 @@ ${status}`;
   }
 
   private async performHandover(phoneE164: string, name: string, summary: string) {
-    await supabase
-      .from('sido_conversations')
-      .update({ handed_off: true, handed_off_at: new Date().toISOString() })
-      .eq('phone', phoneE164);
+    // Only silence the bot for this conversation when pausing is enabled.
+    // In development the bot keeps replying; the handover still records a
+    // ticket and pings support so a human can jump in when ready.
+    if (SIDO_HANDOVER_PAUSE_BOT) {
+      await supabase
+        .from('sido_conversations')
+        .update({ handed_off: true, handed_off_at: new Date().toISOString() })
+        .eq('phone', phoneE164);
+    }
 
     const { error } = await supabase
       .from('sido_human_handovers')
@@ -224,13 +250,21 @@ ${status}`;
     const { data, error } = await supabase
       .from('sido_conversations')
       .upsert({ phone: phoneE164 }, { onConflict: 'phone' })
-      .select('phone, handed_off')
+      .select('phone, handed_off, handed_off_at')
       .single();
 
     if (error || !data) {
       throw new HttpError(500, `Failed to open conversation: ${error?.message}`);
     }
     return data as ConversationRow;
+  }
+
+  private isHandoverStale(conversation: ConversationRow): boolean {
+    if (!conversation.handed_off_at) return true;
+    return (
+      Date.now() - new Date(conversation.handed_off_at).getTime() >=
+      SIDO_HANDOVER_AUTO_RESUME_MS
+    );
   }
 
   private async touchConversation(phoneE164: string) {

@@ -5,7 +5,7 @@ import { whatsappService } from '../services/whatsapp.service.js';
 import { whatsappLifecycleService } from '../services/whatsappLifecycle.service.js';
 import type { TriggerMatchInput } from '../services/whatsappLifecycle.service.js';
 import { sidoBotService } from '../services/sidoBot.service.js';
-import { normalizePhoneToE164 } from '../utils/normalizePhone.js';
+import { normalizePhoneToE164, normalizeAnyPhoneToE164 } from '../utils/normalizePhone.js';
 
 const REGISTRATION_PREFILLED_TEXT =
   "Hi, I'd like to register for a roommate match.";
@@ -83,7 +83,9 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
       // Plain-text inbound message. A text message opens (or stays inside) the
       // 24-hour customer service window, so we may reply with free-form content.
       if (message?.type === 'text') {
-        const phoneE164 = normalizePhoneToE164(from);
+        // Accept any international number so foreign/test users still reach
+        // Sido; Nigerian numbers keep their strict +234 form.
+        const phoneE164 = normalizeAnyPhoneToE164(from);
         if (!phoneE164) {
           console.warn('[whatsapp] ignored text message without a valid sender phone');
           continue;

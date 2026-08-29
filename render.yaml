@@ -24,3 +24,9 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      - key: SIDO_REGISTRATION_URL
+        value: https://urban-nest-tawny.vercel.app/
+        sync: false
+      - key: SIDO_HANDOVER_PAUSE_BOT
+        value: 'false'
+        sync: false
