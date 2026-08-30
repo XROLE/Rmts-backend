@@ -154,6 +154,68 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
         continue;
       }
 
+      // Template quick-reply button press (welcome_to_roommate_ng):
+      // confirm/decline the roommate request, then hand the next reply to Sido.
+      if (message?.type === 'button') {
+        const phoneE164 = normalizeAnyPhoneToE164(from);
+        if (!phoneE164) {
+          console.warn('[whatsapp] ignored button message without a valid sender phone');
+          continue;
+        }
+
+        const buttonText = String(message.button?.text ?? '');
+        const payload = String(message.button?.payload ?? '');
+
+        const messageId = String(message.id ?? '');
+        if (messageId) {
+          const { data: inserted, error: logError } = await supabase
+            .from('whatsapp_messages')
+            .upsert(
+              {
+                wam_id: messageId,
+                phone: phoneE164,
+                direction: 'inbound',
+                message_type: 'button',
+                payload: { text: buttonText, payload },
+              },
+              { onConflict: 'wam_id', ignoreDuplicates: true },
+            )
+            .select('wam_id');
+
+          if (logError) {
+            console.error('[whatsapp] failed to log inbound button message:', logError.message);
+          } else if (!inserted || inserted.length === 0) {
+            console.log(`[whatsapp] duplicate button delivery skipped: ${messageId}`);
+            continue;
+          }
+        }
+
+        try {
+          const result = await whatsappLifecycleService.handleWelcomeButtonReply(
+            phoneE164,
+            buttonText,
+            payload,
+          );
+          console.log(`[whatsapp] button from ${phoneE164} ->`, result);
+
+          if (sidoBotService.enabled && result?.handled) {
+            const context =
+              result.outcome === 'confirmed'
+                ? "The user just tapped the 'Yes, start matching' button on the welcome_to_roommate_ng template. Their Roommates NG profile is confirmed, active and now in the matching queue. Reply warmly to confirm this and explain what happens next."
+                : result.outcome === 'declined'
+                  ? "The user just tapped the 'No, I didn't request this' button on the welcome_to_roommate_ng template. Their profile was marked inactive so it will not be matched. Acknowledge politely, ask if someone else may have used their number, and let them know they can register again anytime."
+                  : undefined;
+
+            void sidoBotService
+              .handleInboundText(phoneE164, contactName, buttonText, context)
+              .catch((err) => console.error('[whatsapp] sido bot failed after button:', err));
+          }
+        } catch (err) {
+          console.error('[whatsapp] welcome button handling failed:', err);
+        }
+        continue;
+      }
+
       const nfmReply =
         message?.type === 'interactive' &&
         message?.interactive?.type === 'nfm_reply' &&

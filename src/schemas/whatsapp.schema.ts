@@ -21,8 +21,18 @@ export const whatsappWebhookBodySchema = z.object({
                     messages: z
                       .array(
                         z.object({
+                          id: z.string().optional(),
                           from: z.string().optional(),
                           type: z.string().optional(),
+                          text: z
+                            .object({ body: z.string().optional() })
+                            .optional(),
+                          button: z
+                            .object({
+                              text: z.string().optional(),
+                              payload: z.string().optional(),
+                            })
+                            .optional(),
                           interactive: z
                             .object({
                               type: z.string().optional(),

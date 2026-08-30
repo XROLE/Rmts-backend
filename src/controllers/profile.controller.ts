@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import { profileService } from '../services/profile.service.js';
+import { whatsappLifecycleService } from '../services/whatsappLifecycle.service.js';
+import type { WelcomeProfileInput } from '../services/whatsappLifecycle.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 
@@ -13,6 +15,15 @@ export const createProfile = asyncHandler(
         ? req.query.ref.trim()
         : undefined;
     const profile = await profileService.create(req.body, ref);
+
+    // Send the welcome_to_roommate_ng confirmation template to the user's
+    // WhatsApp contact. Fire-and-forget so a template/send failure never
+    // breaks profile creation.
+    void whatsappLifecycleService
+      .sendWelcomeTemplate(profile as WelcomeProfileInput)
+      .then((sent) => console.log(`[profile] welcome template ${sent ? 'sent' : 'skipped'}`))
+      .catch((err) => console.error('[profile] welcome template failed:', err));
+
     res.status(201).json({
       success: true,
       message: 'Profile created successfully',

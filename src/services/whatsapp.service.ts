@@ -46,6 +46,10 @@ interface SendTemplateInput {
   name: string;
   language: string;
   bodyParams?: string[];
+  /** Optional reply-button payloads (one per template quick-reply button).
+   * The payload strings are echoed back in the inbound button webhook,
+   * e.g. message.button.payload, when the user taps a button. */
+  buttonPayloads?: string[];
 }
 
 /**
@@ -146,13 +150,28 @@ export class WhatsAppService {
       },
     };
 
+    const components: Record<string, unknown>[] = [];
+
     if (input.bodyParams?.length) {
-      (message.template as Record<string, unknown>).components = [
-        {
-          type: 'body',
-          parameters: input.bodyParams.map((p) => ({ type: 'text', text: p })),
-        },
-      ];
+      components.push({
+        type: 'body',
+        parameters: input.bodyParams.map((p) => ({ type: 'text', text: p })),
+      });
+    }
+
+    if (input.buttonPayloads?.length) {
+      input.buttonPayloads.forEach((payload, index) => {
+        components.push({
+          type: 'button',
+          sub_type: 'quick_reply',
+          index,
+          parameters: [{ type: 'text', text: payload }],
+        });
+      });
+    }
+
+    if (components.length) {
+      (message.template as Record<string, unknown>).components = components;
     }
 
     const { wamId } = await this.postMessage(input.to, message);

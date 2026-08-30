@@ -30,3 +30,12 @@ services:
       - key: SIDO_HANDOVER_PAUSE_BOT
         value: 'false'
         sync: false
+      - key: WHATSAPP_WELCOME_TEMPLATE_NAME
+        value: welcome_to_roommate_ng
+        sync: false
+      - key: WHATSAPP_WELCOME_TEMPLATE_LANG
+        value: en_US
+        sync: false
+      - key: WHATSAPP_WELCOME_TEMPLATE_ENABLED
+        value: 'true'
+        sync: false

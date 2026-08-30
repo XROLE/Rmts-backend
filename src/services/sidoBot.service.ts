@@ -26,7 +26,7 @@ interface ConversationRow {
 }
 
 interface HistoryMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
 }
 
@@ -51,8 +51,17 @@ export class SidoBotService {
     return process.env.SIDO_BOT_ENABLED !== 'false' && Boolean(OPENAI_API_KEY);
   }
 
-  async handleInboundText(phoneE164: string, name: string, text: string): Promise<void> {
+  async handleInboundText(
+    phoneE164: string,
+    name: string,
+    text: string,
+    context?: string,
+  ): Promise<void> {
     const conversation = await this.ensureConversation(phoneE164);
+    // Optional situational context (e.g. the user just tapped a welcome
+    // template button) is recorded as a system message BEFORE the user's
+    // message so ordering in history is deterministic.
+    if (context) await this.logMessage(phoneE164, 'system', context);
     await this.logMessage(phoneE164, 'user', text);
     await this.touchConversation(phoneE164);
 
@@ -291,7 +300,7 @@ ${status}`;
       .from('sido_messages')
       .select('role, content')
       .eq('phone', phoneE164)
-      .in('role', ['user', 'assistant'])
+      .in('role', ['user', 'assistant', 'system'])
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -300,7 +309,7 @@ ${status}`;
     }
 
     return ((data ?? []) as Array<{ role: string; content: string }>)
-      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+      .map((m) => ({ role: m.role as HistoryMessage['role'], content: m.content }))
       .reverse();
   }
 

@@ -4,7 +4,7 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { whatsappService } from './whatsapp.service.js';
 import { paystackService } from './paystack.service.js';
-import { normalizePhoneToE164 } from '../utils/normalizePhone.js';
+import { normalizePhoneToE164, normalizeAnyPhoneToE164 } from '../utils/normalizePhone.js';
 
 const FLOW_ONBOARDING_ID = process.env.WHATSAPP_FLOW_ONBOARDING_ID ?? '';
 const FLOW_MATCH_ID = process.env.WHATSAPP_FLOW_MATCH_ID ?? '';
@@ -39,6 +39,26 @@ const REPLACEMENT_FORM_BASE_URL =
   process.env.REPLACEMENT_FORM_BASE_URL ?? 'https://roommate.ng/request-replacement';
 /** Minimum gap between automatic registration Flow sends to the same phone. */
 const REGISTRATION_RESEND_WINDOW_MS = 15 * 60 * 1000;
+
+/** Template sent to a freshly created profile's WhatsApp contact to confirm. */
+const WELCOME_TEMPLATE_NAME =
+  process.env.WHATSAPP_WELCOME_TEMPLATE_NAME ?? 'welcome_to_roommate_ng';
+const WELCOME_TEMPLATE_LANG = process.env.WHATSAPP_WELCOME_TEMPLATE_LANG ?? 'en_US';
+const WELCOME_TEMPLATE_ENABLED = process.env.WHATSAPP_WELCOME_TEMPLATE_ENABLED !== 'false';
+/** Button payloads that echo back in the inbound webhook for the template. */
+const WELCOME_CONFIRM_PAYLOAD = 'confirm_request';
+const WELCOME_DECLINE_PAYLOAD = 'decline_request';
+
+/** Subset of a roommate_profiles row needed to address the welcome template. */
+export interface WelcomeProfileInput {
+  id: string;
+  full_name: string;
+  phone_number: string;
+  state: string;
+  preferred_locations?: string[];
+  budget_min?: number | null;
+  budget_max?: number | null;
+}
 
 const DECLINE_REASONS = [
   'BUDGET_MISMATCH',
@@ -253,6 +273,160 @@ export class WhatsAppLifecycleService {
       }
       await this.sendRegistrationFlow(phoneE164, name ?? 'Friend');
     }
+  }
+
+  /**
+   * Sends the welcome_to_roommate_ng confirmation template to a freshly
+   * created profile's WhatsApp contact with its two quick-reply buttons.
+   *
+   * Param mapping:
+   *   {{1}} = user's first name
+   *   {{2}} = user's selected area (preferred_locations[0])
+   *   {{3}} = user's state
+   *   {{4}} = budget range in thousands ("300 - 500", single value when equal)
+   *
+   * Only fires when WHATSAPP_WELCOME_TEMPLATE_ENABLED. Returns false and logs
+   * when the profile can't be addressed (missing/invalid phone or place).
+   */
+  async sendWelcomeTemplate(input: WelcomeProfileInput): Promise<boolean> {
+    if (!WELCOME_TEMPLATE_ENABLED) return false;
+
+    const phoneE164 = normalizePhoneToE164(input.phone_number);
+    if (!phoneE164) {
+      console.warn('[whatsapp] welcome template skipped: invalid phone', input.phone_number);
+      return false;
+    }
+
+    const location = input.preferred_locations?.[0];
+    if (!location || !input.state) {
+      console.warn('[whatsapp] welcome template skipped: missing location/state', input.phone_number);
+      return false;
+    }
+
+    const firstName = input.full_name.trim().split(/\s+/)[0] || 'there';
+
+    await whatsappService.sendTemplate({
+      to: phoneE164,
+      name: WELCOME_TEMPLATE_NAME,
+      language: WELCOME_TEMPLATE_LANG,
+      bodyParams: [
+        firstName,
+        location,
+        input.state,
+        this.budgetRangeLabel(Number(input.budget_min ?? 0), Number(input.budget_max ?? 0)),
+      ],
+      buttonPayloads: [WELCOME_CONFIRM_PAYLOAD, WELCOME_DECLINE_PAYLOAD],
+    });
+
+    const { error } = await supabase
+      .from('roommate_profiles')
+      .update({ welcome_sent_at: new Date().toISOString() })
+      .eq('id', input.id);
+
+    if (error) {
+      console.error('[whatsapp] failed to record welcome_sent_at:', error.message);
+    }
+
+    return true;
+  }
+
+  /**
+   * Handles a quick-reply button press on the welcome template.
+   *   confirm_request -> profile stays active and enters the matching queue
+   *   decline_request -> profile is marked inactive so it is never matched
+   * Both updates are idempotent — repeats are acknowledged without re-writing.
+   */
+  async handleWelcomeButtonReply(
+    fromPhone: string,
+    buttonText: string,
+    payload: string,
+  ): Promise<{
+    handled: boolean;
+    outcome?: 'confirmed' | 'declined' | 'already_confirmed' | 'already_declined';
+  }> {
+    const phoneE164 = normalizePhoneToE164(fromPhone) ?? normalizeAnyPhoneToE164(fromPhone);
+    if (!phoneE164) return { handled: false };
+
+    const profile = await this.findProfileByAnyPhone(phoneE164);
+    if (!profile) {
+      console.warn('[whatsapp] welcome button replied but no profile found', { fromPhone, buttonText });
+      return { handled: false };
+    }
+
+    const now = new Date().toISOString();
+
+    if (payload === WELCOME_CONFIRM_PAYLOAD) {
+      if (profile.welcome_declined_at) return { handled: true, outcome: 'already_declined' };
+      if (profile.welcome_confirmed_at) return { handled: true, outcome: 'already_confirmed' };
+
+      const { error } = await supabase
+        .from('roommate_profiles')
+        .update({ welcome_confirmed_at: now, is_active: true })
+        .eq('id', profile.id);
+
+      if (error) {
+        console.error('[whatsapp] failed to confirm profile:', error.message);
+      }
+      return { handled: true, outcome: 'confirmed' };
+    }
+
+    if (payload === WELCOME_DECLINE_PAYLOAD) {
+      if (profile.welcome_declined_at) return { handled: true, outcome: 'already_declined' };
+
+      const { error } = await supabase
+        .from('roommate_profiles')
+        .update({ welcome_declined_at: now, is_active: false })
+        .eq('id', profile.id);
+
+      if (error) {
+        console.error('[whatsapp] failed to decline profile:', error.message);
+      }
+      return { handled: true, outcome: 'declined' };
+    }
+
+    console.warn('[whatsapp] unrecognized welcome button payload:', payload);
+    return { handled: true };
+  }
+
+  private budgetRangeLabel(min: number, max: number): string {
+    const kMin = Math.round(min / 1000);
+    const kMax = Math.round(max / 1000);
+    // NaN/zero protection: fall back to a plain thousands label.
+    const lo = Number.isFinite(kMin) ? kMin : 0;
+    const hi = Number.isFinite(kMax) && kMax > lo ? kMax : lo;
+    return hi > lo ? `${lo} - ${hi}` : `${lo}`;
+  }
+
+  /**
+   * Finds a profile by any serialization of its phone number
+   * (+234..., 234..., 0...</national forms) since the web form accepts a
+   * few different formats while WhatsApp always forwards +234... .
+   */
+  private async findProfileByAnyPhone(
+    phoneE164: string,
+  ): Promise<{
+    id: string;
+    welcome_confirmed_at: string | null;
+    welcome_declined_at: string | null;
+  } | null> {
+    const digits = phoneE164.replace(/\D/g, '');
+    const national = digits.startsWith('234') ? digits.slice(3) : digits;
+    const variants = [phoneE164, digits, `0${national}`, national];
+
+    const { data, error } = await supabase
+      .from('roommate_profiles')
+      .select('id, welcome_confirmed_at, welcome_declined_at')
+      .in('phone_number', variants)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[whatsapp] failed to find profile by phone:', error.message);
+      return null;
+    }
+
+    return (data as { id: string; welcome_confirmed_at: string | null; welcome_declined_at: string | null } | null) ?? null;
   }
 
   /** Sends the approved registration template (no URL, no account creation). */
