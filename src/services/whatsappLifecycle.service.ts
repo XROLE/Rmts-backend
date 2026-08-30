@@ -644,11 +644,14 @@ export class WhatsAppLifecycleService {
     await whatsappService.sendText(
       participant.phone,
       [
-        '🛡️ *Safety first — please follow these rules:*',
-        '1. Always meet in a public place first.',
-        '2. Inspect the apartment in person before paying any rent.',
-        '3. Never transfer money to unverified individual accounts.',
-        'Roommates NG never collects rent or deposits on behalf of anyone.',
+        "🛡️ *Sido's safety squad — quick wins before you guys link up:*",
+        "1. Do a video call first — a roommate who refuses camera calls is a big red flag 🚩",
+        "2. Inspect the apartment in daylight and bring a friend along.",
+        "3. Sign a roommate/sublet agreement before paying any holding deposit.",
+        "4. Never pay via wire transfer, gift cards, or untraceable channels.",
+        "5. A price way below the market rate is usually a phantom listing — be careful.",
+        '',
+        'Roommates NG never collects rent, deposits or inspection fees on behalf of anyone.',
       ].join('\n'),
     );
 
@@ -886,11 +889,14 @@ export class WhatsAppLifecycleService {
     await whatsappService.sendText(
       match.user_phone,
       [
-        '🛡️ *Safety first — please follow these rules:*',
-        '1. Always meet in a public place first.',
-        '2. Inspect the apartment in person before paying any rent.',
-        '3. Never transfer money to unverified individual accounts.',
-        'Roommates NG never collects rent or deposits on behalf of anyone.',
+        "🛡️ *Sido's safety squad — quick wins before you guys link up:*",
+        "1. Do a video call first — a roommate who refuses camera calls is a big red flag 🚩",
+        "2. Inspect the apartment in daylight and bring a friend along.",
+        "3. Sign a roommate/sublet agreement before paying any holding deposit.",
+        "4. Never pay via wire transfer, gift cards, or untraceable channels.",
+        "5. A price way below the market rate is usually a phantom listing — be careful.",
+        '',
+        'Roommates NG never collects rent, deposits or inspection fees on behalf of anyone.',
       ].join('\n'),
     );
 
