@@ -1138,10 +1138,16 @@ export class WhatsAppLifecycleService {
   }
 
   private async findProfileByPhone(phoneE164: string): Promise<{ id: string } | null> {
+    const digits = phoneE164.replace(/\D/g, '');
+    const national = digits.startsWith('234') ? digits.slice(3) : digits;
+    const variants = [phoneE164, digits, `0${national}`, national];
+
     const { data, error } = await supabase
       .from('roommate_profiles')
       .select('id')
-      .eq('phone_number', phoneE164)
+      .in('phone_number', variants)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error) {
