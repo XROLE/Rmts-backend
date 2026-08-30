@@ -13,6 +13,9 @@ const OPENAI_MAX_TOKENS = Number(process.env.OPENAI_MAX_TOKENS ?? 300);
 const SIDO_MAX_HISTORY = Number(process.env.SIDO_MAX_HISTORY ?? 30);
 const SIDO_REGISTRATION_URL =
   process.env.SIDO_REGISTRATION_URL ?? 'https://urban-nest-tawny.vercel.app/';
+/** Randomized composing delay before Sido's reply lands (ms) — simulates typing. */
+const SIDO_REPLY_DELAY_MIN_MS = Number(process.env.SIDO_REPLY_DELAY_MIN_MS ?? 800);
+const SIDO_REPLY_DELAY_MAX_MS = Number(process.env.SIDO_REPLY_DELAY_MAX_MS ?? 1800);
 /** When true, a human handover pauses Sido for that phone until resumed. */
 const SIDO_HANDOVER_PAUSE_BOT = process.env.SIDO_HANDOVER_PAUSE_BOT === 'true';
 /** Stale handovers auto-resume the bot after this window. */
@@ -87,6 +90,14 @@ export class SidoBotService {
       console.error('[sido] LLM call failed:', err);
       reply =
         "Sorry, I hit a small snag just now 🙈 Can you repeat that? Or type 'talk to human' and a person will help you.";
+    }
+
+    // Simulate a human typing: randomized pause before the reply lands.
+    if (SIDO_REPLY_DELAY_MAX_MS > SIDO_REPLY_DELAY_MIN_MS) {
+      const delay =
+        SIDO_REPLY_DELAY_MIN_MS +
+        Math.random() * (SIDO_REPLY_DELAY_MAX_MS - SIDO_REPLY_DELAY_MIN_MS);
+      await this.sleep(delay);
     }
 
     await whatsappService.sendText(phoneE164, reply);
@@ -274,6 +285,10 @@ ${status}`;
       Date.now() - new Date(conversation.handed_off_at).getTime() >=
       SIDO_HANDOVER_AUTO_RESUME_MS
     );
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private async touchConversation(phoneE164: string) {
