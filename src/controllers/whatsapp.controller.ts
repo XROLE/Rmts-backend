@@ -10,6 +10,14 @@ import { normalizePhoneToE164, normalizeAnyPhoneToE164 } from '../utils/normaliz
 const REGISTRATION_PREFILLED_TEXT =
   "Hi, I'd like to register for a roommate match.";
 
+/** Detects the short affirmatives users send to confirm a match ("yes"). */
+function isAffirmative(text: string): boolean {
+  const t = text.trim().toLowerCase().replace(/[.!?]+$/g, '');
+  return /^(y|yes|yeah|yep|ok|okay|sure|agree|proceed|go ahead|correct|confirm|confirmed|yes please|i agree|agreed)$/.test(
+    t,
+  );
+}
+
 /**
  * GET /registration-link — public: returns the wa.me deep link the website
  * uses to send users into the Roommates NG WhatsApp chat to start
@@ -118,6 +126,20 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
         }
 
         const text = String(message.text?.body ?? '');
+
+        // Confirmed-match flow: a pending participant replying "yes" triggers
+        // the one-time service fee link (money-critical, so handled
+        // deterministically before the conversational bot engages).
+        const pendingParticipant = await whatsappLifecycleService.getPendingMatchParticipant(
+          phoneE164,
+        );
+        if (pendingParticipant && isAffirmative(text)) {
+          console.log(`[whatsapp] match "yes" from ${phoneE164} -> issuing fee link`);
+          void whatsappLifecycleService
+            .issueMatchFeeLink(phoneE164, pendingParticipant)
+            .catch((err) => console.error('[whatsapp] fee link issuance failed:', err));
+          continue;
+        }
 
         // Sido (AI assistant) takes over conversational replies whenever it is
         // configured. Process in the background so Meta's webhook ACKs instantly.

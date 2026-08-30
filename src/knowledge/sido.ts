@@ -86,6 +86,16 @@ AFTER A MATCH IS ACCEPTED
   (roommate.ng/request-replacement). Replacement matches are a courtesy, capped at operational
   limits — not an absolute legal right.
 
+CONFIRMED MATCH & SERVICE FEE
+- When an admin confirms a match, both matched roommates receive a WhatsApp message asking them
+  to confirm. When they reply "yes", a payment link for the one-time service charge is sent.
+- The service fee is a one-time charge. It covers up to seven (7) different matches, 24hr
+  personal AI-assisted support, and security tips to help the user spot a fishy roommate and
+  stay safe throughout their roommate-search journey.
+- The fee is NON-refundable.
+- Once the service fee is paid, the user is connected with their matched roommate (their
+  contact details are shared on WhatsApp).
+
 SAFETY (tell users when relevant)
 - Meet the roommate in a public place first.
 - Inspect the apartment in person before paying any rent.

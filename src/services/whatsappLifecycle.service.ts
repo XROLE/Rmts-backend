@@ -49,6 +49,32 @@ const WELCOME_TEMPLATE_ENABLED = process.env.WHATSAPP_WELCOME_TEMPLATE_ENABLED !
 const WELCOME_CONFIRM_PAYLOAD = 'confirm_request';
 const WELCOME_DECLINE_PAYLOAD = 'decline_request';
 
+/** Template sent to both matched roommates when an admin confirms a match. */
+const MATCH_TEMPLATE_NAME = process.env.WHATSAPP_MATCH_TEMPLATE_NAME ?? 'hello_world';
+const MATCH_TEMPLATE_LANG = process.env.WHATSAPP_MATCH_TEMPLATE_LANG ?? 'en_US';
+const MATCH_TEMPLATE_ENABLED = process.env.WHATSAPP_MATCH_TEMPLATE_ENABLED !== 'false';
+/** Number of {{N}} body placeholders to fill with the user's first name. */
+const MATCH_TEMPLATE_PARAMS = Number(process.env.WHATSAPP_MATCH_TEMPLATE_PARAMS ?? 0);
+
+const MATCH_FEE_PITCH_TEXT =
+  'This is a one-time service charge for the matching service.\n\n' +
+  'Your fee covers:\n' +
+  '• Up to seven (7) different matches\n' +
+  '• 24hr personal AI-assisted support on WhatsApp\n' +
+  '• Security tips on how to spot a fishy roommate and stay safe throughout your roommate search journey\n\n' +
+  'Please note: the fee is non-refundable. You will be connected with your matched roommate once the service fee is paid.';
+
+export interface MatchParticipantRow {
+  id: string;
+  match_id: string;
+  profile_id: string;
+  phone: string;
+  response: 'pending' | 'accepted' | 'declined';
+  payment_reference: string | null;
+  payment_status: 'pending' | 'paid';
+  paid_at: string | null;
+}
+
 /** Subset of a roommate_profiles row needed to address the welcome template. */
 export interface WelcomeProfileInput {
   id: string;
@@ -427,6 +453,240 @@ export class WhatsAppLifecycleService {
     }
 
     return (data as { id: string; welcome_confirmed_at: string | null; welcome_declined_at: string | null } | null) ?? null;
+  }
+
+  // ---------------------------------------------------------------
+  // Admin-confirmed match confirmation + service fee flow
+  // ---------------------------------------------------------------
+
+  /**
+   * Starts the two-user match confirmation flow: records one participant row
+   * per matched profile and sends the match template (hello_world by default)
+   * to both WhatsApp contacts. Fire-and-forget from the confirming endpoint;
+   * failures never roll back an already-confirmed match.
+   */
+  async startMatchConfirmation(input: {
+    matchId: string;
+    profiles: Array<{ id: string; full_name: string; phone_number: string }>;
+  }): Promise<void> {
+    if (!MATCH_TEMPLATE_ENABLED) return;
+
+    for (const profile of input.profiles) {
+      try {
+        const phoneE164 = normalizePhoneToE164(profile.phone_number);
+        if (!phoneE164) {
+          console.warn('[whatsapp] match confirmation skipped: invalid phone', profile.phone_number);
+          continue;
+        }
+
+        await supabase
+          .from('match_participants')
+          .upsert(
+            {
+              match_id: input.matchId,
+              profile_id: profile.id,
+              phone: phoneE164,
+              response: 'pending',
+              payment_status: 'pending',
+            },
+            { onConflict: 'match_id,profile_id' },
+          );
+
+        const bodyParams =
+          MATCH_TEMPLATE_PARAMS > 0
+            ? Array.from({ length: MATCH_TEMPLATE_PARAMS }, () => profile.full_name.split(' ')[0])
+            : undefined;
+
+        await whatsappService.sendTemplate({
+          to: phoneE164,
+          name: MATCH_TEMPLATE_NAME,
+          language: MATCH_TEMPLATE_LANG,
+          bodyParams,
+        });
+      } catch (err) {
+        console.error('[whatsapp] failed to start match confirmation for a profile:', err);
+      }
+    }
+  }
+
+  /**
+   * Returns the newest still-pending participant row for a phone (no payment
+   * link issued yet), or null. Used to intercept a "yes" reply after the
+   * match template is received.
+   */
+  async getPendingMatchParticipant(phoneE164: string): Promise<MatchParticipantRow | null> {
+    const { data, error } = await supabase
+      .from('match_participants')
+      .select('*')
+      .eq('phone', phoneE164)
+      .eq('response', 'pending')
+      .is('payment_reference', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[whatsapp] failed to look up pending participant:', error.message);
+      return null;
+    }
+    return (data as MatchParticipantRow | null) ?? null;
+  }
+
+  /**
+   * Issues the one-time service fee payment link for a participant who
+   * confirmed their match. Initializes a Paystack transaction, records it in
+   * transactions (participant_id), attaches the reference to the participant,
+   * then sends the fee pitch plus the Paystack button.
+   */
+  async issueMatchFeeLink(phoneE164: string, participant: MatchParticipantRow): Promise<void> {
+    if (participant.payment_reference) {
+      console.log('[whatsapp] fee link already issued for participant', participant.id);
+      return;
+    }
+
+    const { data: profile } = await supabase
+      .from('roommate_profiles')
+      .select('id, full_name, email')
+      .eq('id', participant.profile_id)
+      .single();
+
+    const name = profile?.full_name ?? 'there';
+    const email = profile?.email ?? syntheticEmail(phoneE164);
+
+    // Guarantee the users(phone) FK that transactions.user_phone references.
+    await this.ensureUser(phoneE164, name);
+
+    const reference = randomUUID();
+    const initialized = await paystackService.initializePayment({
+      amountKobo: Math.round(MATCH_PAYMENT_AMOUNT_NGN * 100),
+      email,
+      reference,
+      callbackUrl: PAYMENT_RETURN_URL,
+      metadata: {
+        match_id: participant.match_id,
+        profile_id: participant.profile_id,
+        participant_id: participant.id,
+        purpose: 'roommate_match_fee',
+      },
+    });
+
+    const { error: txnError } = await supabase.from('transactions').insert({
+      reference,
+      user_phone: phoneE164,
+      participant_id: participant.id,
+      amount: MATCH_PAYMENT_AMOUNT_NGN,
+      status: 'PENDING',
+    });
+    if (txnError) {
+      throw new HttpError(500, `Failed to record match fee transaction: ${txnError.message}`);
+    }
+
+    const { error: partError } = await supabase
+      .from('match_participants')
+      .update({ payment_reference: reference })
+      .eq('id', participant.id);
+    if (partError) {
+      console.error('[whatsapp] failed to attach reference to participant:', partError.message);
+    }
+
+    await whatsappService.sendText(phoneE164, MATCH_FEE_PITCH_TEXT);
+    await whatsappService.sendCtaUrlButton({
+      to: phoneE164,
+      displayText: `Pay ${naira(MATCH_PAYMENT_AMOUNT_NGN)} now`,
+      url: initialized.authorizationUrl,
+      header: 'Pay service fee 🏠',
+      body: 'Tap below to pay the one-time service charge and get connected with your matched roommate.',
+    });
+  }
+
+  /**
+   * Fulfills one paid side of an admin-confirmed match: connects the payer
+   * with the matched roommate's contact details plus the standard safety and
+   * re-match policy messages.
+   */
+  async fulfillPairParticipant(participantId: string): Promise<void> {
+    const participant = await this.fetchParticipant(participantId);
+    if (!participant) {
+      console.warn('[whatsapp] fulfillPairParticipant: participant not found', participantId);
+      return;
+    }
+
+    const { data: sibling } = await supabase
+      .from('match_participants')
+      .select('profile_id')
+      .eq('match_id', participant.match_id)
+      .neq('profile_id', participant.profile_id)
+      .limit(1)
+      .maybeSingle();
+
+    const mate = sibling?.profile_id
+      ? await this.fetchProfileContacts(sibling.profile_id)
+      : null;
+
+    if (mate) {
+      await whatsappService.sendText(
+        participant.phone,
+        [
+          '🎉 Payment confirmed — you are now connected with your matched roommate!',
+          '',
+          `👤 Name: ${mate.full_name}`,
+          `📱 Phone: ${mate.phone}`,
+          ...(mate.social_handle ? [`🔗 Social: ${mate.social_handle}`] : []),
+        ].join('\n'),
+      );
+    } else {
+      await whatsappService.sendText(
+        participant.phone,
+        '🎉 Payment confirmed! You are connected. Our team will share your matched roommate\u2019s contact details shortly.',
+      );
+    }
+
+    await whatsappService.sendText(
+      participant.phone,
+      [
+        '🛡️ *Safety first — please follow these rules:*',
+        '1. Always meet in a public place first.',
+        '2. Inspect the apartment in person before paying any rent.',
+        '3. Never transfer money to unverified individual accounts.',
+        'Roommates NG never collects rent or deposits on behalf of anyone.',
+      ].join('\n'),
+    );
+
+    await whatsappService.sendText(
+      participant.phone,
+      [
+        '🔁 *Re-match policy*',
+        `If things do not work out, you can request a replacement match any time via ${REPLACEMENT_FORM_BASE_URL}?phone=${participant.phone}`,
+        '',
+        'Please note: replacement matches are an optional courtesy capped at operational limits — they are not an absolute legal right.',
+      ].join('\n'),
+    );
+  }
+
+  private async fetchParticipant(id: string): Promise<MatchParticipantRow | null> {
+    const { data, error } = await supabase
+      .from('match_participants')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) {
+      console.error('[whatsapp] failed to fetch participant:', error.message);
+      return null;
+    }
+    return (data as MatchParticipantRow | null) ?? null;
+  }
+
+  private async fetchProfileContacts(
+    profileId: string,
+  ): Promise<{ full_name: string; phone: string; social_handle: string | null } | null> {
+    const { data, error } = await supabase
+      .from('roommate_profiles')
+      .select('full_name, phone_number, social_handle')
+      .eq('id', profileId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const p = data as { full_name: string; phone_number: string; social_handle: string | null };
+    return { full_name: p.full_name, phone: p.phone_number, social_handle: p.social_handle ?? null };
   }
 
   /** Sends the approved registration template (no URL, no account creation). */

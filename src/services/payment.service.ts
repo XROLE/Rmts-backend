@@ -314,6 +314,30 @@ export class PaymentService {
       throw new HttpError(500, `Failed to mark transaction successful: ${updateError.message}`);
     }
 
+    // Admin-confirmed pair flow: the transaction carries a participant_id.
+    // Mark that side paid and connect the payer with the matched roommate.
+    if (txn.participant_id) {
+      const { data: participant } = await supabase
+        .from('match_participants')
+        .select('id, payment_status')
+        .eq('id', txn.participant_id)
+        .maybeSingle();
+
+      if (participant && participant.payment_status !== 'paid') {
+        await supabase
+          .from('match_participants')
+          .update({ payment_status: 'paid', paid_at: now })
+          .eq('id', participant.id);
+      }
+
+      try {
+        await whatsappLifecycleService.fulfillPairParticipant(participant?.id ?? '');
+      } catch (err) {
+        console.error('[paystack-webhook] pair fulfillment messaging failed:', err);
+      }
+      return { handled: true };
+    }
+
     if (txn.match_id) {
       await supabase
         .from('matches')
