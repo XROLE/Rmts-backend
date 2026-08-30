@@ -208,6 +208,21 @@ export class PaymentService {
       return { handled: false };
     }
 
+    return this.creditCommissionForReference(reference);
+  }
+
+  /**
+   * Credits a pending commission for a Paystack charge.success reference.
+   * Looked up by paystack_reference; idempotent (already-paid commissions are
+   * acknowledged, unknown references ignored). Shared by both webhook endpoints
+   * so the referring ambassador is paid regardless of which URL receives the
+   * charge.success event.
+   */
+  async creditCommissionForReference(reference: string): Promise<{
+    handled: boolean;
+    duplicate?: boolean;
+    commission?: unknown;
+  }> {
     const { data: commission, error: commissionError } = await supabase
       .from('commission_earnings')
       .select('*')
@@ -312,6 +327,14 @@ export class PaymentService {
 
     if (updateError) {
       throw new HttpError(500, `Failed to mark transaction successful: ${updateError.message}`);
+    }
+
+    // Credit the referring ambassador for a referred roommate's fee. Best
+    // effort and idempotent via the paystack_reference.
+    try {
+      await this.creditCommissionForReference(reference);
+    } catch (err) {
+      console.error('[paystack-webhook] commission crediting failed:', err);
     }
 
     // Admin-confirmed pair flow: the transaction carries a participant_id.

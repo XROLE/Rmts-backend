@@ -56,13 +56,24 @@ const MATCH_TEMPLATE_ENABLED = process.env.WHATSAPP_MATCH_TEMPLATE_ENABLED !== '
 /** Number of {{N}} body placeholders to fill with the user's first name. */
 const MATCH_TEMPLATE_PARAMS = Number(process.env.WHATSAPP_MATCH_TEMPLATE_PARAMS ?? 0);
 
+/** Time-bound match fee links (defaults: expires 23h, nudge 6h before). */
+const MATCH_PAYMENT_LINK_EXPIRY_HOURS = Number(
+  process.env.MATCH_PAYMENT_LINK_EXPIRY_HOURS ?? 23,
+);
+const MATCH_PAYMENT_NUDGE_BEFORE_HOURS = Number(
+  process.env.MATCH_PAYMENT_NUDGE_BEFORE_HOURS ?? 6,
+);
+const MATCH_PAYMENT_LINK_EXPIRY_MS = MATCH_PAYMENT_LINK_EXPIRY_HOURS * 60 * 60 * 1000;
+const MATCH_PAYMENT_NUDGE_BEFORE_MS = MATCH_PAYMENT_NUDGE_BEFORE_HOURS * 60 * 60 * 1000;
+const COMMISSION_PERCENT = Number(process.env.COMMISSION_PERCENT ?? 10);
+
 const MATCH_FEE_PITCH_TEXT =
   'This is a one-time service charge for the matching service.\n\n' +
   'Your fee covers:\n' +
   '• Up to seven (7) different matches\n' +
   '• 24hr personal AI-assisted support on WhatsApp\n' +
   '• Security tips on how to spot a fishy roommate and stay safe throughout your roommate search journey\n\n' +
-  'Please note: the fee is non-refundable. You will be connected with your matched roommate once the service fee is paid.';
+  `Please note: the fee is non-refundable. Your payment link is valid for ${MATCH_PAYMENT_LINK_EXPIRY_HOURS} hours; if it is not paid within that time, this match will be canceled. You will be connected with your matched roommate once the service fee is paid.`;
 
 export interface MatchParticipantRow {
   id: string;
@@ -73,6 +84,17 @@ export interface MatchParticipantRow {
   payment_reference: string | null;
   payment_status: 'pending' | 'paid';
   paid_at: string | null;
+}
+
+interface DueMatchParticipantRow {
+  id: string;
+  match_id: string;
+  profile_id: string;
+  phone: string;
+  payment_status: string;
+  payment_link_created_at: string | null;
+  nudge_sent_at: string | null;
+  expired_at: string | null;
 }
 
 /** Subset of a roommate_profiles row needed to address the welcome template. */
@@ -546,7 +568,7 @@ export class WhatsAppLifecycleService {
 
     const { data: profile } = await supabase
       .from('roommate_profiles')
-      .select('id, full_name, email')
+      .select('id, full_name, email, referred_by_code')
       .eq('id', participant.profile_id)
       .single();
 
@@ -555,6 +577,11 @@ export class WhatsAppLifecycleService {
 
     // Guarantee the users(phone) FK that transactions.user_phone references.
     await this.ensureUser(phoneE164, name);
+
+    const matchedRoommateProfileId = await this.fetchSiblingProfileId(
+      participant.match_id,
+      participant.profile_id,
+    );
 
     const reference = randomUUID();
     const initialized = await paystackService.initializePayment({
@@ -566,6 +593,7 @@ export class WhatsAppLifecycleService {
         match_id: participant.match_id,
         profile_id: participant.profile_id,
         participant_id: participant.id,
+        matched_roommate_profile_id: matchedRoommateProfileId,
         purpose: 'roommate_match_fee',
       },
     });
@@ -583,10 +611,30 @@ export class WhatsAppLifecycleService {
 
     const { error: partError } = await supabase
       .from('match_participants')
-      .update({ payment_reference: reference })
+      .update({
+        payment_reference: reference,
+        payment_link_created_at: new Date().toISOString(),
+      })
       .eq('id', participant.id);
     if (partError) {
       console.error('[whatsapp] failed to attach reference to participant:', partError.message);
+    }
+
+    // Credit the referring ambassador (if this roommate was referred). Best
+    // effort — a commission hiccup must never block the payment link message.
+    try {
+      await this.attachCommissionIfReferred({
+        profileId: participant.profile_id,
+        referralCode: profile?.referred_by_code ?? null,
+        matchId: participant.match_id,
+        matchedRoommateProfileId,
+        amountNg: MATCH_PAYMENT_AMOUNT_NGN,
+        reference,
+        accessCode: initialized.accessCode,
+        authorizationUrl: initialized.authorizationUrl,
+      });
+    } catch (err) {
+      console.error('[whatsapp] failed to attach commission:', err);
     }
 
     await whatsappService.sendText(phoneE164, MATCH_FEE_PITCH_TEXT);
@@ -690,6 +738,234 @@ export class WhatsAppLifecycleService {
     if (error || !data) return null;
     const p = data as { full_name: string; phone_number: string; social_handle: string | null };
     return { full_name: p.full_name, phone: p.phone_number, social_handle: p.social_handle ?? null };
+  }
+
+  // ---------------------------------------------------------------
+  // Ambassador commission + time-bound fee link sweep
+  // ---------------------------------------------------------------
+
+  private async fetchSiblingProfileId(matchId: string, profileId: string): Promise<string | null> {
+    const { data } = await supabase
+      .from('match_participants')
+      .select('profile_id')
+      .eq('match_id', matchId)
+      .neq('profile_id', profileId)
+      .limit(1)
+      .maybeSingle();
+    return data?.profile_id ?? null;
+  }
+
+  /**
+   * Records the ambassador commission for a referred roommate's service fee
+   * payment. Mirrors paymentService.createPaymentLink: payment_links +
+   * commission_earnings (pending) + pending_balance bump. Best-effort.
+   */
+  private async attachCommissionIfReferred(input: {
+    profileId: string;
+    referralCode: string | null;
+    matchId: string;
+    matchedRoommateProfileId: string | null;
+    amountNg: number;
+    reference: string;
+    accessCode: string | null;
+    authorizationUrl: string;
+  }): Promise<void> {
+    if (!input.referralCode) return;
+
+    const referralCode = input.referralCode.toUpperCase();
+    const { data: ambassador, error: ambError } = await supabase
+      .from('ambassador_profiles')
+      .select('id, user_id, pending_balance_ngn')
+      .eq('referral_code', referralCode)
+      .maybeSingle();
+
+    if (ambError || !ambassador) {
+      console.warn('[whatsapp] commission skipped: no ambassador for referral code', referralCode);
+      return;
+    }
+
+    const commission = Number(((input.amountNg * COMMISSION_PERCENT) / 100).toFixed(2));
+
+    const { data: paymentLink, error: linkError } = await supabase
+      .from('payment_links')
+      .insert({
+        roommate_profile_id: input.profileId,
+        ambassador_user_id: ambassador.user_id,
+        referral_code: referralCode,
+        amount_ngn: input.amountNg,
+        paystack_reference: input.reference,
+        paystack_access_code: input.accessCode,
+        paystack_authorization_url: input.authorizationUrl,
+        match_id: input.matchId,
+        matched_roommate_profile_id: input.matchedRoommateProfileId,
+        status: 'pending',
+      })
+      .select('id')
+      .single();
+
+    if (linkError || !paymentLink) {
+      console.error('[whatsapp] failed to store payment link for commission:', linkError?.message);
+      return;
+    }
+
+    const { error: commissionError } = await supabase.from('commission_earnings').insert({
+      ambassador_user_id: ambassador.user_id,
+      roommate_profile_id: input.profileId,
+      payment_link_id: paymentLink.id,
+      amount_ngn: commission,
+      referral_code: referralCode,
+      status: 'pending',
+      paystack_reference: input.reference,
+    });
+    if (commissionError) {
+      console.error('[whatsapp] failed to record commission:', commissionError.message);
+    }
+
+    const { error: balanceError } = await supabase
+      .from('ambassador_profiles')
+      .update({ pending_balance_ngn: ambassador.pending_balance_ngn + commission })
+      .eq('id', ambassador.id);
+    if (balanceError) {
+      console.error('[whatsapp] failed to bump ambassador pending balance:', balanceError.message);
+    }
+  }
+
+  /**
+   * Scheduled sweep for time-bound match fee links (started in server.ts).
+   *   - nudges participants whose link expires soon
+   *   - expires unpaid links and cancels the match
+   */
+  async processDueMatchPayments(): Promise<{ nudged: number; expired: number }> {
+    const now = Date.now();
+
+    const { data, error } = await supabase
+      .from('match_participants')
+      .select(
+        'id, match_id, profile_id, phone, payment_status, payment_link_created_at, nudge_sent_at, expired_at',
+      )
+      .eq('payment_status', 'pending')
+      .not('payment_reference', 'is', null)
+      .is('expired_at', null);
+
+    if (error) {
+      console.error('[scheduler] failed to fetch due payment links:', error.message);
+      return { nudged: 0, expired: 0 };
+    }
+
+    let nudged = 0;
+    let expired = 0;
+
+    for (const row of (data ?? []) as DueMatchParticipantRow[]) {
+      if (!row.payment_link_created_at) continue;
+      const issuedAt = new Date(row.payment_link_created_at).getTime();
+      const expiryAt = issuedAt + MATCH_PAYMENT_LINK_EXPIRY_MS;
+      const nudgeAt = expiryAt - MATCH_PAYMENT_NUDGE_BEFORE_MS;
+
+      if (now >= expiryAt) {
+        await this.expireMatchParticipant(row);
+        expired += 1;
+      } else if (now >= nudgeAt && !row.nudge_sent_at) {
+        await this.sendExpiryNudge(row);
+        nudged += 1;
+      }
+    }
+
+    return { nudged, expired };
+  }
+
+  /** Marks an unpaid participant's link expired and cancels the match. */
+  private async expireMatchParticipant(row: DueMatchParticipantRow): Promise<void> {
+    const now = new Date().toISOString();
+
+    await supabase
+      .from('match_participants')
+      .update({ expired_at: now, response: 'declined' })
+      .eq('id', row.id);
+
+    const { data: siblings } = await supabase
+      .from('match_participants')
+      .select('id, profile_id, phone, payment_status')
+      .eq('match_id', row.match_id);
+
+    const siblingsList = (siblings ?? []) as Array<{
+      profile_id: string;
+      phone: string;
+      payment_status: string;
+    }>;
+
+    // A sibling already paid: keep the match alive for them, only expire this side.
+    if (siblingsList.some((s) => s.payment_status === 'paid')) {
+      await this.sendExpiredMessage(row.phone, row.profile_id);
+      return;
+    }
+
+    // No one paid: cancel the match and release both profiles for re-matching.
+    await supabase.from('roommate_matches').update({ status: 'closed' }).eq('id', row.match_id);
+
+    const profileIds = siblingsList.map((s) => s.profile_id);
+    if (profileIds.length) {
+      await supabase
+        .from('roommate_profiles')
+        .update({ status: 'new' })
+        .in('id', profileIds)
+        .eq('status', 'matched');
+    }
+
+    await Promise.all(siblingsList.map((s) => this.sendExpiredMessage(s.phone, s.profile_id)));
+  }
+
+  /** Sends the "payment link expiring soon" nudge text. */
+  private async sendExpiryNudge(row: DueMatchParticipantRow): Promise<void> {
+    const [profileRes, siblingRes] = await Promise.all([
+      supabase
+        .from('roommate_profiles')
+        .select('full_name')
+        .eq('id', row.profile_id)
+        .maybeSingle(),
+      this.fetchSiblingProfileId(row.match_id, row.profile_id),
+    ]);
+
+    const firstName = (profileRes.data as { full_name?: string } | null)?.full_name?.split(' ')[0] ?? 'there';
+    const area = siblingRes ? await this.fetchProfileArea(siblingRes) : '';
+
+    try {
+      await whatsappService.sendText(
+        row.phone,
+        `Hi ${firstName}, just a quick heads-up! Your match payment link for your potential roommate in ${area} will expire in ${MATCH_PAYMENT_NUDGE_BEFORE_HOURS} hours.\n\nIf you still want to connect with them, please complete your payment before it expires so the match isn't canceled.`,
+      );
+      await supabase.from('match_participants').update({ nudge_sent_at: new Date().toISOString() }).eq('id', row.id);
+    } catch (err) {
+      console.error('[scheduler] failed to send expiry nudge:', err);
+    }
+  }
+
+  /** Sends the "payment link expired, match canceled" text. */
+  private async sendExpiredMessage(phone: string, profileId: string): Promise<void> {
+    const { data } = await supabase
+      .from('roommate_profiles')
+      .select('full_name')
+      .eq('id', profileId)
+      .maybeSingle();
+    const firstName = (data as { full_name?: string } | null)?.full_name?.split(' ')[0] ?? 'there';
+
+    try {
+      await whatsappService.sendText(
+        phone,
+        `Hi ${firstName}, your payment link has expired and this match has been canceled. Don't worry—you can continue searching for other flatmates on Roommate NG whenever you're ready!`,
+      );
+    } catch (err) {
+      console.error('[scheduler] failed to send expiry message:', err);
+    }
+  }
+
+  private async fetchProfileArea(profileId: string): Promise<string> {
+    const { data } = await supabase
+      .from('roommate_profiles')
+      .select('preferred_locations')
+      .eq('id', profileId)
+      .maybeSingle();
+    const locs = (data as { preferred_locations?: string[] | null } | null)?.preferred_locations;
+    return locs?.[0] ?? '';
   }
 
   /** Sends the approved registration template (no URL, no account creation). */

@@ -54,3 +54,12 @@ services:
       - key: WHATSAPP_MATCH_TEMPLATE_PARAMS
         value: '0'
         sync: false
+      - key: MATCH_PAYMENT_LINK_EXPIRY_HOURS
+        value: '23'
+        sync: false
+      - key: MATCH_PAYMENT_NUDGE_BEFORE_HOURS
+        value: '6'
+        sync: false
+      - key: MATCH_PAYMENT_SCHEDULER_INTERVAL_MIN
+        value: '15'
+        sync: false
