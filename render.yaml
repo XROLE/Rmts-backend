@@ -46,13 +46,10 @@ services:
         value: 'true'
         sync: false
       - key: WHATSAPP_MATCH_TEMPLATE_NAME
-        value: hello_world
+        value: new_match_alert
         sync: false
       - key: WHATSAPP_MATCH_TEMPLATE_LANG
-        value: en_US
-        sync: false
-      - key: WHATSAPP_MATCH_TEMPLATE_PARAMS
-        value: '0'
+        value: en
         sync: false
       - key: MATCH_PAYMENT_LINK_EXPIRY_HOURS
         value: '23'

@@ -50,11 +50,15 @@ const WELCOME_CONFIRM_PAYLOAD = 'confirm_request';
 const WELCOME_DECLINE_PAYLOAD = 'decline_request';
 
 /** Template sent to both matched roommates when an admin confirms a match. */
-const MATCH_TEMPLATE_NAME = process.env.WHATSAPP_MATCH_TEMPLATE_NAME ?? 'hello_world';
-const MATCH_TEMPLATE_LANG = process.env.WHATSAPP_MATCH_TEMPLATE_LANG ?? 'en_US';
+const MATCH_TEMPLATE_NAME = process.env.WHATSAPP_MATCH_TEMPLATE_NAME ?? 'new_match_alert';
+const MATCH_TEMPLATE_LANG = process.env.WHATSAPP_MATCH_TEMPLATE_LANG ?? 'en';
 const MATCH_TEMPLATE_ENABLED = process.env.WHATSAPP_MATCH_TEMPLATE_ENABLED !== 'false';
-/** Number of {{N}} body placeholders to fill with the user's first name. */
-const MATCH_TEMPLATE_PARAMS = Number(process.env.WHATSAPP_MATCH_TEMPLATE_PARAMS ?? 0);
+/** Quick-reply payloads echoed back on the match template buttons. */
+export const MATCH_CONNECT_PAYLOAD = 'connect_request';
+export const MATCH_DECLINE_PAYLOAD = 'decline_request';
+
+const MATCH_NO_BIO_FALLBACK =
+  'User did not upload bio at this point, you can speak more with the user to find out the kind of person he is before agreeing to live together';
 
 /** Time-bound match fee links (defaults: expires 23h, nudge 6h before). */
 const MATCH_PAYMENT_LINK_EXPIRY_HOURS = Number(
@@ -95,6 +99,23 @@ interface DueMatchParticipantRow {
   payment_link_created_at: string | null;
   nudge_sent_at: string | null;
   expired_at: string | null;
+}
+
+/** Profile fields used to build the new_match_alert params for the other side. */
+export interface MatchedProfileInput {
+  id: string;
+  full_name: string;
+  phone_number: string;
+  gender?: string | null;
+  age_range?: string | null;
+  state?: string | null;
+  religion?: string | null;
+  preferred_locations?: string[] | null;
+  budget_min?: number | null;
+  budget_max?: number | null;
+  occupation?: string | null;
+  smoking_habit?: string | null;
+  personal_bio?: string | null;
 }
 
 /** Subset of a roommate_profiles row needed to address the welcome template. */
@@ -483,21 +504,29 @@ export class WhatsAppLifecycleService {
 
   /**
    * Starts the two-user match confirmation flow: records one participant row
-   * per matched profile and sends the match template (hello_world by default)
-   * to both WhatsApp contacts. Fire-and-forget from the confirming endpoint;
-   * failures never roll back an already-confirmed match.
+   * per matched profile and sends the new_match_alert template to both
+   * WhatsApp contacts. Each template is built from the OTHER profile's
+   * details with the Connect / Decline quick-reply buttons. Fire-and-forget
+   * from the confirming endpoint; failures never roll back a confirmed match.
    */
   async startMatchConfirmation(input: {
     matchId: string;
-    profiles: Array<{ id: string; full_name: string; phone_number: string }>;
+    profiles: MatchedProfileInput[];
   }): Promise<void> {
     if (!MATCH_TEMPLATE_ENABLED) return;
 
-    for (const profile of input.profiles) {
+    const [profileA, profileB] = input.profiles;
+    if (!profileA || !profileB) {
+      console.warn('[whatsapp] match confirmation skipped: both profiles required');
+      return;
+    }
+
+    for (const recipient of [profileA, profileB]) {
+      const target = recipient.id === profileA.id ? profileB : profileA;
       try {
-        const phoneE164 = normalizePhoneToE164(profile.phone_number);
+        const phoneE164 = normalizePhoneToE164(recipient.phone_number);
         if (!phoneE164) {
-          console.warn('[whatsapp] match confirmation skipped: invalid phone', profile.phone_number);
+          console.warn('[whatsapp] match confirmation skipped: invalid phone', recipient.phone_number);
           continue;
         }
 
@@ -506,7 +535,7 @@ export class WhatsAppLifecycleService {
           .upsert(
             {
               match_id: input.matchId,
-              profile_id: profile.id,
+              profile_id: recipient.id,
               phone: phoneE164,
               response: 'pending',
               payment_status: 'pending',
@@ -514,16 +543,12 @@ export class WhatsAppLifecycleService {
             { onConflict: 'match_id,profile_id' },
           );
 
-        const bodyParams =
-          MATCH_TEMPLATE_PARAMS > 0
-            ? Array.from({ length: MATCH_TEMPLATE_PARAMS }, () => profile.full_name.split(' ')[0])
-            : undefined;
-
         await whatsappService.sendTemplate({
           to: phoneE164,
           name: MATCH_TEMPLATE_NAME,
           language: MATCH_TEMPLATE_LANG,
-          bodyParams,
+          bodyParams: this.buildMatchAlertParams(recipient, target),
+          buttonPayloads: [MATCH_CONNECT_PAYLOAD, MATCH_DECLINE_PAYLOAD],
         });
       } catch (err) {
         console.error('[whatsapp] failed to start match confirmation for a profile:', err);
@@ -531,24 +556,217 @@ export class WhatsAppLifecycleService {
     }
   }
 
+  /** Builds the ten new_match_alert body params for the receiving user. */
+  private buildMatchAlertParams(
+    recipient: MatchedProfileInput,
+    target: MatchedProfileInput,
+  ): string[] {
+    return [
+      recipient.full_name?.trim().split(/\s+/)[0] || 'there',
+      target.preferred_locations?.[0] || '',
+      target.state || '',
+      this.matchBudgetLabel(Number(target.budget_min ?? 0), Number(target.budget_max ?? 0)),
+      this.humanizeLabel(target.gender),
+      target.age_range || '',
+      this.humanizeLabel(target.occupation),
+      target.religion || '',
+      this.humanizeLabel(target.smoking_habit),
+      target.personal_bio?.trim() || MATCH_NO_BIO_FALLBACK,
+    ];
+  }
+
+  /** Formats a naira budget as "50k - 150k / year" (single value when equal). */
+  private matchBudgetLabel(min: number, max: number): string {
+    const kMin = Math.round(min / 1000);
+    const kMax = Math.round(max / 1000);
+    const lo = Number.isFinite(kMin) ? kMin : 0;
+    const hi = Number.isFinite(kMax) ? kMax : lo;
+    return hi > lo ? `${lo}k - ${hi}k / year` : `${lo}k / year`;
+  }
+
+  /** Humanizes stored enum codes (male -> Male, working_professional -> Working professional). */
+  private humanizeLabel(value?: string | null): string {
+    if (!value) return '';
+    const map: Record<string, string> = {
+      male: 'Male',
+      female: 'Female',
+      no_preference: 'No preference',
+      student: 'Student',
+      nysc: 'NYSC',
+      working_professional: 'Working professional',
+      self_employed: 'Self employed',
+      job_seeker: 'Job seeker',
+      non_smoker: 'Non-smoker',
+      occasional_smoker: 'Occasional smoker',
+      regular_smoker: 'Regular smoker',
+    };
+    return map[value] ?? value.charAt(0).toUpperCase() + value.slice(1);
+  }
+
   /**
-   * Returns the newest still-pending participant row for a phone (no payment
-   * link issued yet), or null. Used to intercept a "yes" reply after the
-   * match template is received.
+   * Handles a quick-reply button press on the new_match_alert template.
+   *  - connect_request: mark accepted. If the other side also accepted, both
+   *    get the good-news message and an individual service fee payment link.
+   *    Otherwise the connector is told we are waiting on the other side.
+   *  - decline_request: mark declined (+ notify/close/release via
+   *    handleMatchDeclined).
    */
-  async getPendingMatchParticipant(phoneE164: string): Promise<MatchParticipantRow | null> {
+  async handleMatchButtonReply(
+    fromPhone: string,
+    buttonText: string,
+    payload: string,
+  ): Promise<{
+    handled: boolean;
+    outcome?: 'connected' | 'both_connected' | 'already_connected' | 'declined';
+  }> {
+    const phoneE164 = normalizePhoneToE164(fromPhone) ?? normalizeAnyPhoneToE164(fromPhone);
+    if (!phoneE164) return { handled: false };
+
+    const participant = await this.findParticipantByPhone(phoneE164);
+    if (!participant) {
+      console.warn('[whatsapp] match button replied but no participant found', {
+        fromPhone,
+        buttonText,
+      });
+      return { handled: false };
+    }
+
+    if (payload === MATCH_CONNECT_PAYLOAD) {
+      if (participant.response === 'declined') return { handled: true, outcome: 'declined' };
+      if (participant.response === 'accepted') return { handled: true, outcome: 'already_connected' };
+
+      await supabase
+        .from('match_participants')
+        .update({ response: 'accepted' })
+        .eq('id', participant.id);
+
+      const sibling = await this.fetchSiblingParticipant(
+        participant.match_id,
+        participant.profile_id,
+      );
+
+      if (sibling?.response === 'accepted') {
+        await this.celebrateBothAccepted(participant.match_id);
+        return { handled: true, outcome: 'both_connected' };
+      }
+
+      await whatsappService.sendText(
+        participant.phone,
+        'We have acknowledged your matching request and we are waiting for the other potential match to respond. Once they accept to connect, we will swing into action! 👍',
+      );
+      return { handled: true, outcome: 'connected' };
+    }
+
+    if (payload === MATCH_DECLINE_PAYLOAD) {
+      if (participant.response !== 'declined') {
+        await supabase
+          .from('match_participants')
+          .update({ response: 'declined' })
+          .eq('id', participant.id);
+      }
+      await this.handleMatchDeclined(participant);
+      return { handled: true, outcome: 'declined' };
+    }
+
+    return { handled: false };
+  }
+
+  /** Both accepted: good news to each, then issue each their fee payment link. */
+  private async celebrateBothAccepted(matchId: string): Promise<void> {
+    const { data, error } = await supabase
+      .from('match_participants')
+      .select('*')
+      .eq('match_id', matchId)
+      .eq('response', 'accepted');
+
+    if (error) {
+      console.error('[whatsapp] failed to fetch accepted participants:', error.message);
+      return;
+    }
+
+    for (const participant of (data ?? []) as MatchParticipantRow[]) {
+      if (participant.payment_reference) continue;
+      await whatsappService.sendText(
+        participant.phone,
+        '🎉 Great news! You and your potential match have both accepted to be connected. Each of you will now get a payment link to activate the match — once the service fee is paid, we will swing into action!',
+      );
+      await this.issueMatchFeeLink(participant.phone, participant);
+    }
+  }
+
+  /**
+   * Decline handling: notify the decliner; if the sibling had accepted and
+   * nobody has paid, also notify the sibling, close the match and release both
+   * profiles back to 'new' so they can be re-matched.
+   */
+  private async handleMatchDeclined(participant: MatchParticipantRow): Promise<void> {
+    await whatsappService.sendText(
+      participant.phone,
+      "We have noted your decision — no wahala. Your profile stays open in the pool, so we can still match you with someone else. 👍",
+    );
+
+    const sibling = await this.fetchSiblingParticipant(participant.match_id, participant.profile_id);
+    const canRelease = !sibling || sibling.payment_status !== 'paid';
+
+    if (canRelease) {
+      if (sibling?.response === 'accepted') {
+        await whatsappService.sendText(
+          sibling.phone,
+          'Just to let you know — the potential match declined this time. No stress: your profile is back in the pool and we’ll keep looking for a better fit for you.',
+        );
+      }
+
+      await supabase
+        .from('roommate_matches')
+        .update({ status: 'closed' })
+        .eq('id', participant.match_id);
+
+      const { data: participants } = await supabase
+        .from('match_participants')
+        .select('profile_id')
+        .eq('match_id', participant.match_id);
+
+      const profileIds = (participants ?? []).map((p) => p.profile_id as string);
+      if (profileIds.length) {
+        await supabase
+          .from('roommate_profiles')
+          .update({ status: 'new' })
+          .in('id', profileIds)
+          .eq('status', 'matched');
+      }
+    }
+  }
+
+  private async findParticipantByPhone(phoneE164: string): Promise<MatchParticipantRow | null> {
     const { data, error } = await supabase
       .from('match_participants')
       .select('*')
       .eq('phone', phoneE164)
-      .eq('response', 'pending')
-      .is('payment_reference', null)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (error) {
-      console.error('[whatsapp] failed to look up pending participant:', error.message);
+      console.error('[whatsapp] failed to find participant by phone:', error.message);
+      return null;
+    }
+    return (data as MatchParticipantRow | null) ?? null;
+  }
+
+  private async fetchSiblingParticipant(
+    matchId: string,
+    profileId: string,
+  ): Promise<MatchParticipantRow | null> {
+    const { data, error } = await supabase
+      .from('match_participants')
+      .select('*')
+      .eq('match_id', matchId)
+      .neq('profile_id', profileId)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[whatsapp] failed to fetch sibling participant:', error.message);
       return null;
     }
     return (data as MatchParticipantRow | null) ?? null;

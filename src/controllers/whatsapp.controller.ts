@@ -3,20 +3,16 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { whatsappService } from '../services/whatsapp.service.js';
 import { whatsappLifecycleService } from '../services/whatsappLifecycle.service.js';
-import type { TriggerMatchInput } from '../services/whatsappLifecycle.service.js';
+import {
+  MATCH_CONNECT_PAYLOAD,
+  MATCH_DECLINE_PAYLOAD,
+  type TriggerMatchInput,
+} from '../services/whatsappLifecycle.service.js';
 import { sidoBotService } from '../services/sidoBot.service.js';
 import { normalizePhoneToE164, normalizeAnyPhoneToE164 } from '../utils/normalizePhone.js';
 
 const REGISTRATION_PREFILLED_TEXT =
   "Hi, I'd like to register for a roommate match.";
-
-/** Detects the short affirmatives users send to confirm a match ("yes"). */
-function isAffirmative(text: string): boolean {
-  const t = text.trim().toLowerCase().replace(/[.!?]+$/g, '');
-  return /^(y|yes|yeah|yep|ok|okay|sure|agree|proceed|go ahead|correct|confirm|confirmed|yes please|i agree|agreed)$/.test(
-    t,
-  );
-}
 
 /**
  * GET /registration-link — public: returns the wa.me deep link the website
@@ -127,20 +123,6 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
 
         const text = String(message.text?.body ?? '');
 
-        // Confirmed-match flow: a pending participant replying "yes" triggers
-        // the one-time service fee link (money-critical, so handled
-        // deterministically before the conversational bot engages).
-        const pendingParticipant = await whatsappLifecycleService.getPendingMatchParticipant(
-          phoneE164,
-        );
-        if (pendingParticipant && isAffirmative(text)) {
-          console.log(`[whatsapp] match "yes" from ${phoneE164} -> issuing fee link`);
-          void whatsappLifecycleService
-            .issueMatchFeeLink(phoneE164, pendingParticipant)
-            .catch((err) => console.error('[whatsapp] fee link issuance failed:', err));
-          continue;
-        }
-
         // Sido (AI assistant) takes over conversational replies whenever it is
         // configured. Process in the background so Meta's webhook ACKs instantly.
         if (sidoBotService.enabled) {
@@ -213,27 +195,39 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
         }
 
         try {
-          const result = await whatsappLifecycleService.handleWelcomeButtonReply(
-            phoneE164,
-            buttonText,
-            payload,
-          );
-          console.log(`[whatsapp] button from ${phoneE164} ->`, result);
+          // Match alert buttons (new_match_alert): connect/decline decide the
+          // two-user confirmation + fee flow (fixed deterministic replies).
+          if (payload === MATCH_CONNECT_PAYLOAD || payload === MATCH_DECLINE_PAYLOAD) {
+            const result = await whatsappLifecycleService.handleMatchButtonReply(
+              phoneE164,
+              buttonText,
+              payload,
+            );
+            console.log(`[whatsapp] match button from ${phoneE164} ->`, result);
+          } else {
+            // Welcome template buttons (welcome_to_roommate_ng): confirm/decline.
+            const result = await whatsappLifecycleService.handleWelcomeButtonReply(
+              phoneE164,
+              buttonText,
+              payload,
+            );
+            console.log(`[whatsapp] button from ${phoneE164} ->`, result);
 
-          if (sidoBotService.enabled && result?.handled) {
-            const context =
-              result.outcome === 'confirmed'
-                ? "The user just tapped the 'Yes, start matching' button on the welcome_to_roommate_ng template. Their Roommates NG profile is confirmed, active and now in the matching queue. Reply warmly to confirm this and explain what happens next."
-                : result.outcome === 'declined'
-                  ? "The user just tapped the 'No, I didn't request this' button on the welcome_to_roommate_ng template. Their profile was marked inactive so it will not be matched. Acknowledge politely, ask if someone else may have used their number, and let them know they can register again anytime."
-                  : undefined;
+            if (sidoBotService.enabled && result?.handled) {
+              const context =
+                result.outcome === 'confirmed'
+                  ? "The user just tapped the 'Yes, start matching' button on the welcome_to_roommate_ng template. Their Roommates NG profile is confirmed, active and now in the matching queue. Reply warmly to confirm this and explain what happens next."
+                  : result.outcome === 'declined'
+                    ? "The user just tapped the 'No, I didn't request this' button on the welcome_to_roommate_ng template. Their profile was marked inactive so it will not be matched. Acknowledge politely, ask if someone else may have used their number, and let them know they can register again anytime."
+                    : undefined;
 
-            void sidoBotService
-              .handleInboundText(phoneE164, contactName, buttonText, context)
-              .catch((err) => console.error('[whatsapp] sido bot failed after button:', err));
+              void sidoBotService
+                .handleInboundText(phoneE164, contactName, buttonText, context)
+                .catch((err) => console.error('[whatsapp] sido bot failed after button:', err));
+            }
           }
         } catch (err) {
-          console.error('[whatsapp] welcome button handling failed:', err);
+          console.error('[whatsapp] button handling failed:', err);
         }
         continue;
       }
