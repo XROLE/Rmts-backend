@@ -122,6 +122,73 @@ export class EmailService {
     });
   }
 
+  /**
+   * Notifies the careers inbox that a job application was submitted.
+   * Best-effort and fire-and-forget, matching the support ticket pattern.
+   */
+  async sendJobApplication(payload: {
+    fullName: string;
+    email: string;
+    phone: string;
+    position: string;
+    location: string;
+    noticePeriod: string;
+    expectedSalary: string;
+    coverNote: string;
+    resumeUrl?: string;
+    linkedinUrl?: string;
+    githubUrl?: string;
+  }): Promise<void> {
+    const supportEmail =
+      process.env.SUPPORT_EMAIL ?? 'urbannest.quick.support@gmail.com';
+
+    const text = [
+      `New job application from Roommate NG`,
+      ``,
+      `Full name: ${payload.fullName}`,
+      `Email: ${payload.email}`,
+      `Phone: ${payload.phone}`,
+      `Position: ${payload.position}`,
+      `Location: ${payload.location}`,
+      `Notice period: ${payload.noticePeriod}`,
+      `Expected salary: ${payload.expectedSalary}`,
+      payload.linkedinUrl ? `LinkedIn: ${payload.linkedinUrl}` : '',
+      payload.githubUrl ? `GitHub: ${payload.githubUrl}` : '',
+      payload.resumeUrl ? `Resume: ${payload.resumeUrl}` : '',
+      ``,
+      `Cover note:`,
+      payload.coverNote,
+    ]
+      .filter((line) => line !== '')
+      .join('\n');
+
+    const html = `
+      <h2>New job application</h2>
+      <p><strong>Full name:</strong> ${this.escapeHtml(payload.fullName)}</p>
+      <p><strong>Email:</strong> ${this.escapeHtml(payload.email)}</p>
+      <p><strong>Phone:</strong> ${this.escapeHtml(payload.phone)}</p>
+      <p><strong>Position:</strong> ${this.escapeHtml(payload.position)}</p>
+      <p><strong>Location:</strong> ${this.escapeHtml(payload.location)}</p>
+      <p><strong>Notice period:</strong> ${this.escapeHtml(payload.noticePeriod)}</p>
+      <p><strong>Expected salary:</strong> ${this.escapeHtml(payload.expectedSalary)}</p>
+      ${payload.linkedinUrl ? `<p><strong>LinkedIn:</strong> ${this.escapeHtml(payload.linkedinUrl)}</p>` : ''}
+      ${payload.githubUrl ? `<p><strong>GitHub:</strong> ${this.escapeHtml(payload.githubUrl)}</p>` : ''}
+      ${payload.resumeUrl ? `<p><strong>Resume:</strong> <a href="${this.escapeHtml(payload.resumeUrl)}">${this.escapeHtml(payload.resumeUrl)}</a></p>` : ''}
+      <p><strong>Cover note:</strong></p>
+      <pre>${this.escapeHtml(payload.coverNote)}</pre>
+    `;
+
+    await this.transporter.sendMail({
+      from: process.env.SMTP_USER
+        ? `"Roommate NG" <${process.env.SMTP_USER}>`
+        : supportEmail,
+      to: supportEmail,
+      subject: `[Job Application] ${payload.position} — ${payload.fullName}`,
+      text,
+      html,
+    });
+  }
+
   private escapeHtml(value: string): string {
     return value
       .replace(/&/g, '&amp;')
