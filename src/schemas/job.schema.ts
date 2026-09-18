@@ -12,38 +12,101 @@ function optionalUrl(label: string) {
   ]);
 }
 
-export const createJobPostingSchema = z.object({
-  body: z.object({
-    title: z
-      .string()
-      .trim()
-      .min(1, 'Title is required')
-      .max(150, 'Title must be 150 characters or fewer'),
-    description: z
-      .string()
-      .trim()
-      .min(1, 'Description is required')
-      .max(10000, 'Description must be 10,000 characters or fewer'),
-    location: z.string().trim().min(1, 'Location is required').max(100),
-    position: z.string().trim().min(1, 'Position is required').max(100),
-    salaryRangeNgn: z
-      .string()
-      .trim()
-      .max(100, 'Salary range must be 100 characters or fewer')
-      .optional(),
-    status: z
-      .enum(['open', 'closed'], {
-        errorMap: () => ({ message: "Status must be 'open' or 'closed'" }),
-      })
-      .optional(),
+const DEPARTMENT = z.enum(
+  ['Engineering', 'Operations', 'Growth & Marketing', 'Product & Design'],
+  {
+    errorMap: () => ({
+      message:
+        "Department must be one of: Engineering, Operations, Growth & Marketing, Product & Design",
+    }),
+  },
+);
+
+const EMPLOYMENT_TYPE = z.enum(
+  ['full-time', 'part-time', 'contract', 'internship'],
+  {
+    errorMap: () => ({
+      message: "Employment type must be one of: full-time, part-time, contract, internship",
+    }),
+  },
+);
+
+const EXPERIENCE_LEVEL = z.enum(
+  ['intern', 'junior', 'mid-level', 'senior', 'lead', 'manager'],
+  {
+    errorMap: () => ({
+      message:
+        "Experience level must be one of: intern, junior, mid-level, senior, lead, manager",
+    }),
+  },
+);
+
+const WORK_MODE = z.enum(['onsite', 'hybrid', 'remote'], {
+  errorMap: () => ({
+    message: "Work mode must be one of: onsite, hybrid, remote",
   }),
+});
+
+const CURRENCY = z.enum(['USD', 'NGN'], {
+  errorMap: () => ({ message: "Currency must be 'USD' or 'NGN'" }),
+});
+
+const JOB_POSTING_FIELDS = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, 'Title is required')
+    .max(150, 'Title must be 150 characters or fewer'),
+  department: DEPARTMENT,
+  employmentType: EMPLOYMENT_TYPE,
+  experienceLevel: EXPERIENCE_LEVEL,
+  workMode: WORK_MODE,
+  location: z.string().trim().min(1, 'Location is required').max(100),
+  salaryMin: z.coerce
+    .number({ invalid_type_error: 'Salary minimum must be a number' })
+    .min(0, 'Salary minimum cannot be negative')
+    .optional(),
+  salaryMax: z.coerce
+    .number({ invalid_type_error: 'Salary maximum must be a number' })
+    .min(0, 'Salary maximum cannot be negative')
+    .optional(),
+  currency: CURRENCY.default('NGN'),
+  showSalary: z.boolean().default(true),
+  description: z
+    .string()
+    .trim()
+    .min(1, 'Description is required')
+    .max(10000, 'Description must be 10,000 characters or fewer'),
+  requirements: z
+    .array(z.string().trim().min(1, 'Requirement cannot be empty').max(1000))
+    .min(1, 'At least one requirement is required'),
+  niceToHaves: z
+    .array(z.string().trim().min(1, 'Nice-to-have cannot be empty').max(1000))
+    .optional(),
+  benefits: z
+    .array(z.string().trim().min(1, 'Benefit cannot be empty').max(1000))
+    .optional(),
+  isActive: z.boolean().default(true),
+  closingDate: z.union([z.coerce.date(), z.literal(null)]).optional(),
+});
+
+const salaryInRange = (data: { salaryMin?: number; salaryMax?: number }) =>
+  data.salaryMax == null || data.salaryMin == null || data.salaryMax >= data.salaryMin;
+
+const salaryRangeRefine = {
+  message: 'salaryMax must be greater than or equal to salaryMin',
+  path: ['salaryMax'] as ['salaryMax'],
+} as const;
+
+export const createJobPostingSchema = z.object({
+  body: JOB_POSTING_FIELDS.refine(salaryInRange, salaryRangeRefine),
 });
 
 export const updateJobPostingSchema = z.object({
   params: z.object({
     id: z.string().uuid('A valid job posting ID is required'),
   }),
-  body: createJobPostingSchema.shape.body.partial(),
+  body: JOB_POSTING_FIELDS.partial().refine(salaryInRange, salaryRangeRefine),
 });
 
 export const getJobPostingSchema = z.object({

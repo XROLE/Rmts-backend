@@ -24,6 +24,9 @@ const RESUME_MAX_BYTES = 5 * 1024 * 1024;
 const APPLICATION_SELECT =
   'id, user_id, job_posting_id, full_name, email, phone_number, location, position, github_url, linkedin_url, resume_url, cover_note, notice_period, expected_salary_ngn, status, created_at';
 
+const POSTING_SELECT =
+  'id, title, department, employment_type, experience_level, work_mode, location, salary_min, salary_max, currency, show_salary, description, requirements, nice_to_haves, benefits, is_active, closing_date, created_by, created_at, updated_at';
+
 export class JobService {
   /** Creates a job posting. Super-admin only (enforced at the route layer). */
   async createPosting(input: CreateJobPostingInput, createdBy: string) {
@@ -31,14 +34,24 @@ export class JobService {
       .from('job_postings')
       .insert({
         title: input.title,
-        description: input.description,
+        department: input.department,
+        employment_type: input.employmentType,
+        experience_level: input.experienceLevel,
+        work_mode: input.workMode,
         location: input.location,
-        position: input.position,
-        salary_range_ngn: input.salaryRangeNgn ?? null,
-        status: input.status ?? 'open',
+        salary_min: input.salaryMin ?? null,
+        salary_max: input.salaryMax ?? null,
+        currency: input.currency,
+        show_salary: input.showSalary,
+        description: input.description,
+        requirements: input.requirements,
+        nice_to_haves: input.niceToHaves ?? null,
+        benefits: input.benefits ?? null,
+        is_active: input.isActive,
+        closing_date: input.closingDate ? new Date(input.closingDate).toISOString() : null,
         created_by: createdBy,
       })
-      .select('id, title, description, location, position, salary_range_ngn, status, created_at')
+      .select(POSTING_SELECT)
       .single();
 
     if (error || !data) {
@@ -50,36 +63,43 @@ export class JobService {
 
   /** Updates a job posting. Super-admin only (enforced at the route layer). */
   async updatePosting(id: string, input: UpdateJobPostingInput['body']) {
+    const columnMap: Record<string, string> = {
+      title: 'title',
+      department: 'department',
+      employmentType: 'employment_type',
+      experienceLevel: 'experience_level',
+      workMode: 'work_mode',
+      location: 'location',
+      salaryMin: 'salary_min',
+      salaryMax: 'salary_max',
+      currency: 'currency',
+      showSalary: 'show_salary',
+      description: 'description',
+      requirements: 'requirements',
+      niceToHaves: 'nice_to_haves',
+      benefits: 'benefits',
+      isActive: 'is_active',
+      closingDate: 'closing_date',
+    };
+
     const update: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(input)) {
       if (value === undefined) continue;
-      switch (key) {
-        case 'title':
-          update.title = value;
-          break;
-        case 'description':
-          update.description = value;
-          break;
-        case 'location':
-          update.location = value;
-          break;
-        case 'position':
-          update.position = value;
-          break;
-        case 'salaryRangeNgn':
-          update.salary_range_ngn = value || null;
-          break;
-        case 'status':
-          update.status = value;
-          break;
-      }
+      const column = columnMap[key];
+      if (!column) continue;
+      update[column] =
+        key === 'closingDate'
+          ? value
+            ? new Date(value as string | number | Date).toISOString()
+            : null
+          : value;
     }
 
     const { data, error } = await supabase
       .from('job_postings')
       .update(update)
       .eq('id', id)
-      .select('id, title, description, location, position, salary_range_ngn, status, updated_at')
+      .select(POSTING_SELECT)
       .maybeSingle();
 
     if (error) {
@@ -93,14 +113,14 @@ export class JobService {
     return data;
   }
 
-  /** Lists open job postings, newest first. Public. */
+  /** Lists active job postings, newest first. Public. */
   async listPostings() {
+    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('job_postings')
-      .select(
-        'id, title, description, location, position, salary_range_ngn, status, created_at',
-      )
-      .eq('status', 'open')
+      .select(POSTING_SELECT)
+      .eq('is_active', true)
+      .or(`closing_date.is.null,closing_date.gt.${nowIso}`)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -110,15 +130,15 @@ export class JobService {
     return data ?? [];
   }
 
-  /** Returns a single open job posting. Public. */
+  /** Returns a single active job posting. Public. */
   async getPosting(id: string) {
+    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('job_postings')
-      .select(
-        'id, title, description, location, position, salary_range_ngn, status, created_at',
-      )
+      .select(POSTING_SELECT)
       .eq('id', id)
-      .eq('status', 'open')
+      .eq('is_active', true)
+      .or(`closing_date.is.null,closing_date.gt.${nowIso}`)
       .maybeSingle();
 
     if (error) {
