@@ -54,7 +54,7 @@ export const createJobApplication = asyncHandler(
       return;
     }
 
-    const application = await jobService.createApplication(req.user!.id, req.body, {
+    const application = await jobService.createApplication(req.user?.id ?? null, req.body, {
       buffer: file.buffer,
       mimetype: file.mimetype,
       size: file.size,

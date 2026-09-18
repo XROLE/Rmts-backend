@@ -158,7 +158,7 @@ export class JobService {
    * email never blocks or fails the request.
    */
   async createApplication(
-    userId: string,
+    userId: string | null,
     input: CreateJobApplicationInput,
     file: { buffer: Buffer; mimetype: string; size: number; originalname: string },
   ) {

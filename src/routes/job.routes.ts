@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { requireAuth } from '../middleware/auth.js';
+import { optionalAuth } from '../middleware/optionalAuth.js';
 import { requireSuperAdmin } from '../middleware/requireSuperAdmin.js';
 import { validate } from '../middleware/validate.js';
 import {
@@ -39,10 +40,11 @@ router.post(
   createJobPosting,
 );
 
-// Authenticated: submit a job application (multipart, resume uploaded to R2).
+// Public: submit a job application (multipart, resume uploaded to R2).
+// Records the applicant when a valid token is supplied, otherwise anonymous.
 router.post(
   '/applications',
-  requireAuth,
+  optionalAuth,
   upload.single('resume'),
   validate(createJobApplicationSchema),
   createJobApplication,
