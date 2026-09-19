@@ -7,6 +7,7 @@ import { validate } from '../middleware/validate.js';
 import {
   createJobApplicationSchema,
   createJobPostingSchema,
+  getApplicationResumeSchema,
   getJobPostingSchema,
   listJobApplicationsSchema,
   updateJobPostingSchema,
@@ -14,6 +15,7 @@ import {
 import {
   createJobApplication,
   createJobPosting,
+  downloadJobApplicationResume,
   getJobPosting,
   listJobApplications,
   listJobPostings,
@@ -57,6 +59,15 @@ router.get(
   requireSuperAdmin,
   validate(listJobApplicationsSchema),
   listJobApplications,
+);
+
+// Super admin: stream a single application's resume from R2.
+router.get(
+  '/applications/:applicationId/resume',
+  requireAuth,
+  requireSuperAdmin,
+  validate(getApplicationResumeSchema),
+  downloadJobApplicationResume,
 );
 
 // Super admin: edit a job posting.

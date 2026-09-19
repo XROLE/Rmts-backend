@@ -115,6 +115,12 @@ export const getJobPostingSchema = z.object({
   }),
 });
 
+export const getApplicationResumeSchema = z.object({
+  params: z.object({
+    applicationId: z.string().uuid('A valid application ID is required'),
+  }),
+});
+
 export const createJobApplicationSchema = z.object({
   body: z.object({
     jobPostingId: z.string().uuid('A valid job posting ID is required').optional(),

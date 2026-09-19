@@ -1,7 +1,19 @@
 import type { Response } from 'express';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { jobService } from '../services/job.service.js';
+import { r2Bucket, r2Client } from '../config/r2.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
+
+function resumeKeyFromUrl(resumeUrl: string | null): string | null {
+  if (!resumeUrl) return null;
+  try {
+    const key = new URL(resumeUrl).pathname.replace(/^\/+/, '');
+    return key || null;
+  } catch {
+    return null;
+  }
+}
 
 export const createJobPosting = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
@@ -79,5 +91,59 @@ export const listJobApplications = asyncHandler(
       message: 'Job applications fetched successfully',
       data: result,
     });
+  },
+);
+
+export const downloadJobApplicationResume = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const application = await jobService.getApplication(req.params.applicationId);
+    const key = resumeKeyFromUrl(application.resume_url);
+    if (!key) {
+      res.status(404).json({
+        success: false,
+        message: 'No resume is attached to this application',
+      });
+      return;
+    }
+
+    let object;
+    try {
+      object = await r2Client.send(new GetObjectCommand({ Bucket: r2Bucket, Key: key }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'unknown error';
+      res.status(500).json({
+        success: false,
+        message: `Failed to fetch resume: ${message}`,
+      });
+      return;
+    }
+
+    const body = object.Body as NodeJS.ReadableStream | undefined;
+    if (!body) {
+      res.status(404).json({
+        success: false,
+        message: 'Resume file could not be retrieved',
+      });
+      return;
+    }
+
+    const ext = key.slice(key.lastIndexOf('.')).toLowerCase() || '.pdf';
+    const safeName = (application.full_name || 'application')
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .toLowerCase();
+
+    res.setHeader('Content-Type', object.ContentType ?? 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="resume-${safeName}${ext}"`);
+
+    body.on('error', (err) => {
+      console.error('Failed to stream resume:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Failed to stream resume' });
+      }
+      res.end();
+    });
+
+    body.pipe(res);
   },
 );

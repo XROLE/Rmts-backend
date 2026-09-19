@@ -214,6 +214,25 @@ export class JobService {
     return { applications: data ?? [], total: count ?? 0 };
   }
 
+  /** Returns an application's stored resume reference. Super-admin only (route layer). */
+  async getApplication(applicationId: string) {
+    const { data, error } = await supabase
+      .from('job_applications')
+      .select('id, resume_url, full_name')
+      .eq('id', applicationId)
+      .maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to fetch job application: ${error.message}`);
+    }
+
+    if (!data) {
+      throw new HttpError(404, 'Job application not found');
+    }
+
+    return data as { id: string; resume_url: string | null; full_name: string };
+  }
+
   /**
    * Uploads a resume to Cloudflare R2 and returns its public URL. Rejects
    * non-document files and anything over RESUME_MAX_BYTES.
