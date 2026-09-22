@@ -4,8 +4,9 @@ import { HttpError } from './errorHandler.js';
 import type { AuthenticatedRequest } from './auth.js';
 
 /**
- * Restricts a route to users whose role is 'admin'. Must run after requireAuth
- * so req.user is populated. Rejects non-admins with 403.
+ * Restricts a route to users whose role is 'admin' or 'super_admin' (super
+ * admins inherit all admin privileges). Must run after requireAuth so req.user
+ * is populated. Rejects everyone else with 403.
  */
 export async function requireAdmin(
   req: AuthenticatedRequest,
@@ -31,7 +32,7 @@ export async function requireAdmin(
       throw new HttpError(404, 'User record not found');
     }
 
-    if (data.role !== 'admin') {
+    if (data.role !== 'admin' && data.role !== 'super_admin') {
       throw new HttpError(403, 'Forbidden: admin access required');
     }
 
