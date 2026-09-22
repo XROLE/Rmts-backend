@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import authRoutes from './auth.routes.js';
 import profileRoutes from './profile.routes.js';
 import ambassadorRoutes from './ambassador.routes.js';
 import verificationRoutes from './verification.routes.js';
@@ -14,6 +15,7 @@ router.get('/health', (_req, res) => {
   res.status(200).json({ success: true, status: 'ok' });
 });
 
+router.use('/auth', authRoutes);
 router.use('/profiles', profileRoutes);
 router.use('/ambassadors', ambassadorRoutes);
 router.use('/verification', verificationRoutes);
