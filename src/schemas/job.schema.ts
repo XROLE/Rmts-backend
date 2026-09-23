@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { normalizePhoneToE164 } from '../utils/normalizePhone.js';
+import { isSupportedPhone } from '../utils/normalizePhone.js';
 
 /**
  * Accepts a blank string (absent optional input), a trimmed valid URL, or
@@ -129,9 +129,9 @@ export const createJobApplicationSchema = z.object({
     phoneNumber: z
       .string()
       .trim()
-      .refine((value) => normalizePhoneToE164(value) !== null, {
+      .refine((value) => isSupportedPhone(value), {
         message:
-          'Phone number must be a valid Nigerian phone number (e.g. 08131234567 or +2348131234567)',
+          'Phone number must be a valid Nigerian or UK phone number (e.g. 08131234567, +2348131234567, 07123456789 or +447123456789)',
       }),
     location: z.string().trim().min(1, 'Location is required').max(100),
     position: z.string().trim().min(1, 'Position is required').max(100),

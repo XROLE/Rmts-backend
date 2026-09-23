@@ -4,7 +4,6 @@ import { extname } from 'node:path';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { supabase } from '../config/supabase.js';
 import { HttpError } from '../middleware/errorHandler.js';
-import { normalizePhoneToE164 } from '../utils/normalizePhone.js';
 import { emailService } from './email.service.js';
 import { r2Bucket, r2Client, r2PublicBaseUrl } from '../config/r2.js';
 import type {
@@ -172,7 +171,7 @@ export class JobService {
         job_posting_id: input.jobPostingId ?? null,
         full_name: input.fullName,
         email: input.email,
-        phone_number: normalizePhoneToE164(input.phoneNumber),
+        phone_number: input.phoneNumber,
         location: input.location,
         position: input.position,
         github_url: githubUrl,

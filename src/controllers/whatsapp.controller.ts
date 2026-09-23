@@ -329,9 +329,9 @@ export async function triggerMatch(req: Request, res: Response) {
  */
 export async function resumeBot(req: Request, res: Response) {
   const { phone } = req.body as { phone: string };
-  const phoneE164 = normalizePhoneToE164(phone);
+  const phoneE164 = normalizePhoneToE164(phone) ?? normalizeAnyPhoneToE164(phone);
   if (!phoneE164) {
-    throw new HttpError(400, 'A valid Nigerian phone number is required');
+    throw new HttpError(400, 'A valid Nigerian or UK phone number is required');
   }
 
   await sidoBotService.resumeConversation(phoneE164);

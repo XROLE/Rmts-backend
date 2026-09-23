@@ -4,6 +4,7 @@ import { supabase } from '../config/supabase.js';
 import { whatsappService } from './whatsapp.service.js';
 import { emailService } from './email.service.js';
 import { SIDO_SYSTEM_PROMPT, SIDO_TOOLS } from '../knowledge/sido.js';
+import { phoneLookupVariants } from '../utils/normalizePhone.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
@@ -329,9 +330,7 @@ ${status}`;
   }
 
   private async findProfileByPhone(phoneE164: string): Promise<{ id: string } | null> {
-    const digits = phoneE164.replace(/\D/g, '');
-    const national = digits.startsWith('234') ? digits.slice(3) : digits;
-    const variants = [phoneE164, digits, `0${national}`, national];
+    const variants = phoneLookupVariants(phoneE164);
 
     const { data, error } = await supabase
       .from('roommate_profiles')

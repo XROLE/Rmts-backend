@@ -1,6 +1,6 @@
 import { z } from 'zod';
+import { SUPPORTED_PHONE_REGEX } from '../utils/normalizePhone.js';
 
-const NIGERIAN_PHONE_REGEX = /^(?:\+?234|0)[789][01]\d{8}$/;
 const NIGERIAN_ACCOUNT_NUMBER_REGEX = /^\d{10}$/;
 
 const NIGERIAN_STATES = [
@@ -19,7 +19,7 @@ const SOCIAL_MEDIA_PLATFORMS = [
 const EMERGENCY_CONTACT = z
   .object({
     name: z.string().min(1).max(100),
-    phone: z.string().regex(NIGERIAN_PHONE_REGEX, 'Emergency contact phone must be a valid Nigerian phone number'),
+    phone: z.string().regex(SUPPORTED_PHONE_REGEX, 'Emergency contact phone must be a valid Nigerian or UK phone number'),
     relationship: z.string().min(1).max(50),
   })
   .strict();
@@ -29,8 +29,8 @@ export const registerAmbassadorSchema = z.object({
     fullName: z.string().min(1, 'Full name is required').max(100),
     email: z.string().email('A valid email is required'),
     whatsappNumber: z.string().regex(
-      NIGERIAN_PHONE_REGEX,
-      'WhatsApp number must be a valid Nigerian phone number (e.g. 08131234567 or +2348131234567)',
+      SUPPORTED_PHONE_REGEX,
+      'WhatsApp number must be a valid Nigerian or UK phone number (e.g. 08131234567, +2348131234567, 07123456789 or +447123456789)',
     ),
     password: z
       .string()
@@ -53,8 +53,8 @@ export const updateAmbassadorProfileSchema = z.object({
       whatsappNumber: z
         .string()
         .regex(
-          NIGERIAN_PHONE_REGEX,
-          'WhatsApp number must be a valid Nigerian phone number',
+          SUPPORTED_PHONE_REGEX,
+          'WhatsApp number must be a valid Nigerian or UK phone number',
         )
         .optional(),
       profilePictureUrl: z.string().url('Profile picture must be a valid URL').optional(),

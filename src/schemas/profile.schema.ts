@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SUPPORTED_PHONE_REGEX } from '../utils/normalizePhone.js';
 
 const GENDER = z.enum(['male', 'female', 'no_preference']);
 const MARITAL_STATUS = z.enum([
@@ -20,15 +21,13 @@ const OCCUPATION = z.enum([
   'job_seeker',
 ]);
 
-const NIGERIAN_PHONE_REGEX = /^(?:\+?234|0)[789][01]\d{8}$/;
-
 export const createProfileSchema = z.object({
   body: z.object({
     email: z.string().email('A valid email is required'),
     fullName: z.string().min(1, 'Full name is required').max(100),
     phoneNumber: z.string().regex(
-      NIGERIAN_PHONE_REGEX,
-      'Phone number must be a valid Nigerian phone number (e.g. 08131234567 or +2348131234567)',
+      SUPPORTED_PHONE_REGEX,
+      'Phone number must be a valid Nigerian or UK phone number (e.g. 08131234567, +2348131234567, 07123456789 or +447123456789)',
     ),
     gender: GENDER,
     ageRange: z.string().min(1, 'Age range is required').max(20),

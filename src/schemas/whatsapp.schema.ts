@@ -1,6 +1,5 @@
 import { z } from 'zod';
-
-const NIGERIAN_PHONE_REGEX = /^(?:\+?234|0)[789][01]\d{8}$/;
+import { SUPPORTED_PHONE_REGEX } from '../utils/normalizePhone.js';
 
 /**
  * Loose validation of the inbound Meta webhook payload. Message payloads are
@@ -62,8 +61,8 @@ export const whatsappWebhookBodySchema = z.object({
 export const triggerOnboardingSchema = z.object({
   body: z.object({
     phone: z.string().regex(
-      NIGERIAN_PHONE_REGEX,
-      'Phone must be a valid Nigerian number (e.g. 08131234567 or 2348131234567)',
+      SUPPORTED_PHONE_REGEX,
+      'Phone must be a valid Nigerian or UK number (e.g. 08131234567, +2348131234567, 07123456789 or +447123456789)',
     ),
     name: z.string().min(1, 'Name is required').max(100),
   }),
@@ -73,8 +72,8 @@ export const triggerOnboardingSchema = z.object({
 export const triggerRegistrationSchema = z.object({
   body: z.object({
     phone: z.string().regex(
-      NIGERIAN_PHONE_REGEX,
-      'Phone must be a valid Nigerian number (e.g. 08131234567 or 2348131234567)',
+      SUPPORTED_PHONE_REGEX,
+      'Phone must be a valid Nigerian or UK number (e.g. 08131234567, +2348131234567, 07123456789 or +447123456789)',
     ),
     name: z.string().min(1, 'Name is required').max(100),
   }),
@@ -84,8 +83,8 @@ export const triggerRegistrationSchema = z.object({
 export const resumeBotSchema = z.object({
   body: z.object({
     phone: z.string().regex(
-      NIGERIAN_PHONE_REGEX,
-      'Phone must be a valid Nigerian number (e.g. 08131234567 or 2348131234567)',
+      SUPPORTED_PHONE_REGEX,
+      'Phone must be a valid Nigerian or UK number (e.g. 08131234567, +2348131234567, 07123456789 or +447123456789)',
     ),
   }),
 });
@@ -95,8 +94,8 @@ export const triggerMatchSchema = z.object({
   body: z.object({
     matchId: z.string().uuid('A valid match ID is required').optional(),
     userPhone: z.string().regex(
-      NIGERIAN_PHONE_REGEX,
-      'userPhone must be a valid Nigerian number (e.g. 2348012345678)',
+      SUPPORTED_PHONE_REGEX,
+      'userPhone must be a valid Nigerian or UK number (e.g. 2348012345678 or 447123456789)',
     ),
     userName: z.string().min(1, 'userName is required').max(100),
     compatibilityScore: z.coerce.number().int().min(0).max(100),

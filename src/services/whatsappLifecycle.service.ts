@@ -4,7 +4,7 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { whatsappService } from './whatsapp.service.js';
 import { paystackService } from './paystack.service.js';
-import { normalizePhoneToE164, normalizeAnyPhoneToE164 } from '../utils/normalizePhone.js';
+import { normalizePhoneToE164, normalizeAnyPhoneToE164, phoneLookupVariants } from '../utils/normalizePhone.js';
 
 const FLOW_ONBOARDING_ID = process.env.WHATSAPP_FLOW_ONBOARDING_ID ?? '';
 const FLOW_MATCH_ID = process.env.WHATSAPP_FLOW_MATCH_ID ?? '';
@@ -195,9 +195,9 @@ export class WhatsAppLifecycleService {
       throw new HttpError(500, 'WHATSAPP_FLOW_ONBOARDING_ID is not configured');
     }
 
-    const phoneE164 = normalizePhoneToE164(input.phone);
+    const phoneE164 = normalizePhoneToE164(input.phone) ?? normalizeAnyPhoneToE164(input.phone);
     if (!phoneE164) {
-      throw new HttpError(400, 'A valid Nigerian phone number is required');
+      throw new HttpError(400, 'A valid Nigerian or UK phone number is required');
     }
 
     await this.ensureUser(phoneE164, input.name);
@@ -226,9 +226,9 @@ export class WhatsAppLifecycleService {
       throw new HttpError(500, 'WHATSAPP_FLOW_MATCH_ID is not configured');
     }
 
-    const phoneE164 = normalizePhoneToE164(input.userPhone);
+    const phoneE164 = normalizePhoneToE164(input.userPhone) ?? normalizeAnyPhoneToE164(input.userPhone);
     if (!phoneE164) {
-      throw new HttpError(400, 'A valid Nigerian user phone number is required');
+      throw new HttpError(400, 'A valid Nigerian or UK user phone number is required');
     }
 
     await this.ensureUser(phoneE164, input.userName);
@@ -277,9 +277,9 @@ export class WhatsAppLifecycleService {
    * handleRegistrationResponse.
    */
   async triggerRegistration(input: { phone: string; name: string }) {
-    const phoneE164 = normalizePhoneToE164(input.phone);
+    const phoneE164 = normalizePhoneToE164(input.phone) ?? normalizeAnyPhoneToE164(input.phone);
     if (!phoneE164) {
-      throw new HttpError(400, 'A valid Nigerian phone number is required');
+      throw new HttpError(400, 'A valid Nigerian or UK phone number is required');
     }
 
     const flowToken = await this.sendRegistrationFlow(phoneE164, input.name);
@@ -306,7 +306,7 @@ export class WhatsAppLifecycleService {
     phoneE164: string,
     name?: string,
   ): Promise<'register' | 'already_registered' | 'recently_sent'> {
-    if (!normalizePhoneToE164(phoneE164)) {
+    if (!normalizePhoneToE164(phoneE164) && !normalizeAnyPhoneToE164(phoneE164)) {
       console.warn('[whatsapp] autoSendRegistrationFlow ignored for invalid phone', { phoneE164 });
       return 'already_registered';
     }
@@ -360,7 +360,7 @@ export class WhatsAppLifecycleService {
   async sendWelcomeTemplate(input: WelcomeProfileInput): Promise<boolean> {
     if (!WELCOME_TEMPLATE_ENABLED) return false;
 
-    const phoneE164 = normalizePhoneToE164(input.phone_number);
+    const phoneE164 = normalizePhoneToE164(input.phone_number) ?? normalizeAnyPhoneToE164(input.phone_number);
     if (!phoneE164) {
       console.warn('[whatsapp] welcome template skipped: invalid phone', input.phone_number);
       return false;
@@ -478,9 +478,7 @@ export class WhatsAppLifecycleService {
     welcome_confirmed_at: string | null;
     welcome_declined_at: string | null;
   } | null> {
-    const digits = phoneE164.replace(/\D/g, '');
-    const national = digits.startsWith('234') ? digits.slice(3) : digits;
-    const variants = [phoneE164, digits, `0${national}`, national];
+    const variants = phoneLookupVariants(phoneE164);
 
     const { data, error } = await supabase
       .from('roommate_profiles')
@@ -524,7 +522,7 @@ export class WhatsAppLifecycleService {
     for (const recipient of [profileA, profileB]) {
       const target = recipient.id === profileA.id ? profileB : profileA;
       try {
-        const phoneE164 = normalizePhoneToE164(recipient.phone_number);
+        const phoneE164 = normalizePhoneToE164(recipient.phone_number) ?? normalizeAnyPhoneToE164(recipient.phone_number);
         if (!phoneE164) {
           console.warn('[whatsapp] match confirmation skipped: invalid phone', recipient.phone_number);
           continue;
@@ -1233,7 +1231,7 @@ export class WhatsAppLifecycleService {
    * opts the user out. Sends a text confirmation either way.
    */
   async handleOnboardingResponse(fromPhone: string, responseJson: Record<string, unknown>) {
-    const phoneE164 = normalizePhoneToE164(fromPhone);
+    const phoneE164 = normalizePhoneToE164(fromPhone) ?? normalizeAnyPhoneToE164(fromPhone);
     const decision = String(responseJson.proceed_decision ?? '').toUpperCase();
     if (!phoneE164 || !['YES', 'NO'].includes(decision)) {
       console.warn('[whatsapp] ignored onboarding response', { fromPhone, decision });
@@ -1270,7 +1268,7 @@ export class WhatsAppLifecycleService {
    * skipped rather than double-inserted.
    */
   async handleRegistrationResponse(fromPhone: string, responseJson: Record<string, unknown>) {
-    const phoneE164 = normalizePhoneToE164(fromPhone);
+    const phoneE164 = normalizePhoneToE164(fromPhone) ?? normalizeAnyPhoneToE164(fromPhone);
     if (!phoneE164) {
       console.warn('[whatsapp] registration ignored without a valid sender phone');
       return { handled: false };
@@ -1898,9 +1896,7 @@ export class WhatsAppLifecycleService {
   }
 
   private async findProfileByPhone(phoneE164: string): Promise<{ id: string } | null> {
-    const digits = phoneE164.replace(/\D/g, '');
-    const national = digits.startsWith('234') ? digits.slice(3) : digits;
-    const variants = [phoneE164, digits, `0${national}`, national];
+    const variants = phoneLookupVariants(phoneE164);
 
     const { data, error } = await supabase
       .from('roommate_profiles')
