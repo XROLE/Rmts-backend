@@ -10,6 +10,7 @@ import {
   getApplicationResumeSchema,
   getJobPostingSchema,
   listJobApplicationsSchema,
+  updateJobApplicationStatusSchema,
   updateJobPostingSchema,
 } from '../schemas/job.schema.js';
 import {
@@ -19,6 +20,7 @@ import {
   getJobPosting,
   listJobApplications,
   listJobPostings,
+  updateJobApplicationStatus,
   updateJobPosting,
 } from '../controllers/job.controller.js';
 
@@ -59,6 +61,15 @@ router.get(
   requireSuperAdmin,
   validate(listJobApplicationsSchema),
   listJobApplications,
+);
+
+// Super admin: update a single application's status.
+router.patch(
+  '/applications/:applicationId/status',
+  requireAuth,
+  requireSuperAdmin,
+  validate(updateJobApplicationStatusSchema),
+  updateJobApplicationStatus,
 );
 
 // Super admin: stream a single application's resume from R2.

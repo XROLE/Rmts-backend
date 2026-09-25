@@ -121,6 +121,25 @@ export const getApplicationResumeSchema = z.object({
   }),
 });
 
+const APPLICATION_STATUS = z.enum(
+  ['new', 'to-be-interviewed', 'interviewed', 'rejected', 'archived', 'offered'],
+  {
+    errorMap: () => ({
+      message:
+        "Status must be one of: new, to-be-interviewed, interviewed, rejected, archived, offered",
+    }),
+  },
+);
+
+export const updateJobApplicationStatusSchema = z.object({
+  params: z.object({
+    applicationId: z.string().uuid('A valid application ID is required'),
+  }),
+  body: z.object({
+    status: APPLICATION_STATUS,
+  }),
+});
+
 export const createJobApplicationSchema = z.object({
   body: z.object({
     jobPostingId: z.string().uuid('A valid job posting ID is required').optional(),
