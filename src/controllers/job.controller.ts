@@ -94,6 +94,20 @@ export const listJobApplications = asyncHandler(
   },
 );
 
+export const updateJobApplicationStatus = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const application = await jobService.updateApplicationStatus(
+      req.params.applicationId,
+      req.body.status,
+    );
+    res.status(200).json({
+      success: true,
+      message: 'Job application status updated successfully',
+      data: application,
+    });
+  },
+);
+
 export const downloadJobApplicationResume = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     const application = await jobService.getApplication(req.params.applicationId);

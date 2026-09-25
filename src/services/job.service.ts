@@ -213,6 +213,26 @@ export class JobService {
     return { applications: data ?? [], total: count ?? 0 };
   }
 
+  /** Updates an application's status. Super-admin only (enforced at the route layer). */
+  async updateApplicationStatus(applicationId: string, status: string) {
+    const { data, error } = await supabase
+      .from('job_applications')
+      .update({ status })
+      .eq('id', applicationId)
+      .select(APPLICATION_SELECT)
+      .maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to update job application status: ${error.message}`);
+    }
+
+    if (!data) {
+      throw new HttpError(404, 'Job application not found');
+    }
+
+    return data;
+  }
+
   /** Returns an application's stored resume reference. Super-admin only (route layer). */
   async getApplication(applicationId: string) {
     const { data, error } = await supabase
