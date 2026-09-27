@@ -24,7 +24,7 @@ const APPLICATION_SELECT =
   'id, user_id, job_posting_id, full_name, email, phone_number, location, position, github_url, linkedin_url, resume_url, cover_note, notice_period, expected_salary_ngn, status, created_at';
 
 const POSTING_SELECT =
-  'id, title, department, employment_type, experience_level, work_mode, location, salary_min, salary_max, currency, show_salary, description, requirements, nice_to_haves, benefits, is_active, closing_date, created_by, created_at, updated_at';
+  'id, title, department, employment_type, experience_level, work_mode, location, job_type, salary_min, salary_max, currency, show_salary, description, requirements, nice_to_haves, benefits, is_active, closing_date, created_by, created_at, updated_at';
 
 export class JobService {
   /** Creates a job posting. Super-admin only (enforced at the route layer). */
@@ -38,6 +38,7 @@ export class JobService {
         experience_level: input.experienceLevel,
         work_mode: input.workMode,
         location: input.location,
+        job_type: input.jobType,
         salary_min: input.salaryMin ?? null,
         salary_max: input.salaryMax ?? null,
         currency: input.currency,
@@ -69,6 +70,7 @@ export class JobService {
       experienceLevel: 'experience_level',
       workMode: 'work_mode',
       location: 'location',
+      jobType: 'job_type',
       salaryMin: 'salary_min',
       salaryMax: 'salary_max',
       currency: 'currency',
@@ -164,6 +166,10 @@ export class JobService {
     const resumeUrl = await this.uploadResume(file);
     const githubUrl = input.githubUrl?.trim() || null;
 
+    if (input.expectedSalary == null && !(await this.isVolunteerRole(input.jobPostingId))) {
+      throw new HttpError(400, 'Expected salary is required for paid job applications');
+    }
+
     const { data: application, error: insertError } = await supabase
       .from('job_applications')
       .insert({
@@ -179,7 +185,7 @@ export class JobService {
         resume_url: resumeUrl,
         cover_note: input.coverNote,
         notice_period: input.noticePeriod,
-        expected_salary_ngn: input.expectedSalary,
+        expected_salary_ngn: input.expectedSalary ?? null,
       })
       .select(APPLICATION_SELECT)
       .single();
@@ -253,6 +259,27 @@ export class JobService {
   }
 
   /**
+   * Returns true when the referenced posting is a volunteer role. Postings
+   * that cannot be resolved (including applications submitted without a
+   * jobPostingId) are treated as paid, which keeps expected salary required.
+   */
+  private async isVolunteerRole(jobPostingId?: string): Promise<boolean> {
+    if (!jobPostingId) return false;
+
+    const { data, error } = await supabase
+      .from('job_postings')
+      .select('job_type')
+      .eq('id', jobPostingId)
+      .maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to resolve job posting: ${error.message}`);
+    }
+
+    return data?.job_type === 'volunteer';
+  }
+
+  /**
    * Uploads a resume to Cloudflare R2 and returns its public URL. Rejects
    * non-document files and anything over RESUME_MAX_BYTES.
    */
@@ -306,7 +333,7 @@ export class JobService {
     resume_url: string;
     cover_note: string;
     notice_period: string;
-    expected_salary_ngn: number;
+    expected_salary_ngn: number | null;
   }): Promise<void> {
     await emailService.sendJobApplication({
       fullName: application.full_name,
@@ -315,7 +342,10 @@ export class JobService {
       position: application.position,
       location: application.location,
       noticePeriod: application.notice_period,
-      expectedSalary: String(application.expected_salary_ngn),
+      expectedSalary:
+        application.expected_salary_ngn != null
+          ? String(application.expected_salary_ngn)
+          : 'Not specified (volunteer role)',
       coverNote: application.cover_note,
       resumeUrl: application.resume_url,
       linkedinUrl: application.linkedin_url ?? undefined,
