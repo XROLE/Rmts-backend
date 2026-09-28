@@ -3,6 +3,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { jobService } from '../services/job.service.js';
 import { r2Bucket, r2Client } from '../config/r2.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { getUserRole } from '../utils/role.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 
 function resumeKeyFromUrl(resumeUrl: string | null): string | null {
@@ -37,14 +38,21 @@ export const updateJobPosting = asyncHandler(
   },
 );
 
-export const listJobPostings = asyncHandler(async (_req, res: Response) => {
-  const postings = await jobService.listPostings();
-  res.status(200).json({
-    success: true,
-    message: 'Job postings fetched successfully',
-    data: postings,
-  });
-});
+export const listJobPostings = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    let postings;
+    if (req.user?.id && (await getUserRole(req.user.id)) === 'super_admin') {
+      postings = await jobService.listAllPostings();
+    } else {
+      postings = await jobService.listPostings();
+    }
+    res.status(200).json({
+      success: true,
+      message: 'Job postings fetched successfully',
+      data: postings,
+    });
+  },
+);
 
 export const getJobPosting = asyncHandler(async (req, res: Response) => {
   const posting = await jobService.getPosting(req.params.id);

@@ -31,9 +31,9 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-// Public: browse open job postings.
+// Public: browse open job postings. Super admins (authenticated) see all postings.
 // Static /applications routes must be declared before the /:id param routes.
-router.get('/', listJobPostings);
+router.get('/', optionalAuth, listJobPostings);
 
 // Super admin: create a job posting.
 router.post(
