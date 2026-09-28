@@ -131,6 +131,20 @@ export class JobService {
     return data ?? [];
   }
 
+  /** Lists all job postings (active or not), newest first. Super-admin only. */
+  async listAllPostings() {
+    const { data, error } = await supabase
+      .from('job_postings')
+      .select(POSTING_SELECT)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new HttpError(500, `Failed to list job postings: ${error.message}`);
+    }
+
+    return data ?? [];
+  }
+
   /** Returns a single active job posting. Public. */
   async getPosting(id: string) {
     const nowIso = new Date().toISOString();
