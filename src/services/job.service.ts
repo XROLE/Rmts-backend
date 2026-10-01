@@ -114,14 +114,11 @@ export class JobService {
     return data;
   }
 
-  /** Lists active job postings, newest first. Public. */
+  /** Lists all job postings, newest first. Public. */
   async listPostings() {
-    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('job_postings')
       .select(POSTING_SELECT)
-      .eq('is_active', true)
-      .or(`closing_date.is.null,closing_date.gt.${nowIso}`)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -145,15 +142,12 @@ export class JobService {
     return data ?? [];
   }
 
-  /** Returns a single active job posting. Public. */
+  /** Returns a single job posting. Public. */
   async getPosting(id: string) {
-    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('job_postings')
       .select(POSTING_SELECT)
       .eq('id', id)
-      .eq('is_active', true)
-      .or(`closing_date.is.null,closing_date.gt.${nowIso}`)
       .maybeSingle();
 
     if (error) {
