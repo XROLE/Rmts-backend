@@ -1,6 +1,5 @@
 import 'dotenv/config';
-import nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
+import { Resend } from 'resend';
 
 export interface SupportEmailPayload {
   title: string;
@@ -9,27 +8,85 @@ export interface SupportEmailPayload {
   userEmail?: string;
 }
 
+const DEFAULT_RESEND_FROM = '"Roommate NG" <onboarding@resend.dev>';
+
 /**
- * Sends application emails via SMTP. Configured for Gmail by default.
- * Uses an app password on the sending account (SMTP_USER / SMTP_PASS).
+ * Sends application emails via Resend. Requires RESEND_API_KEY and a verified
+ * RESEND_FROM sender (a domain you own in Resend, or onboarding@resend.dev in
+ * test). A missing API key only fails at send-time so a config-less local run
+ * does not crash on boot.
  */
 export class EmailService {
-  private transporter: Transporter;
+  private resend: Resend | null;
 
   constructor() {
-    const host = process.env.SMTP_HOST ?? 'smtp.gmail.com';
-    const port = Number(process.env.SMTP_PORT ?? 465);
-    const user = process.env.SMTP_USER;
-    const pass = process.env.SMTP_PASS;
+    const apiKey = process.env.RESEND_API_KEY;
+    this.resend = apiKey ? new Resend(apiKey) : null;
+  }
 
-    this.transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: user && pass ? { user, pass } : undefined,
-      connectionTimeout: 10_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 10_000,
+  private resolveFrom(): string {
+    return process.env.RESEND_FROM ?? DEFAULT_RESEND_FROM;
+  }
+
+  private async send(payload: {
+    to: string;
+    subject: string;
+    text: string;
+    html: string;
+  }): Promise<void> {
+    if (!this.resend) {
+      throw new Error(
+        'Email service is not configured. Set RESEND_API_KEY and RESEND_FROM in your environment.',
+      );
+    }
+
+    try {
+      const { error } = await this.resend.emails.send({
+        from: this.resolveFrom(),
+        to: payload.to,
+        subject: payload.subject,
+        text: payload.text,
+        html: payload.html,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    } catch (err) {
+      if (err instanceof Error) throw err;
+      throw new Error('Failed to send email via Resend');
+    }
+  }
+
+  /**
+   * Sends a one-time verification code to the user's email address.
+   */
+  async sendVerificationCode(payload: { to: string; code: string }): Promise<void> {
+    const { to, code } = payload;
+
+    const text = [
+      `Your Roommate NG verification code is ${code}.`,
+      ``,
+      `It expires in 10 minutes.`,
+      ``,
+      `If you did not request this code, you can safely ignore this email.`,
+    ].join('\n');
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2>Verify your email</h2>
+        <p>Your Roommate NG verification code is:</p>
+        <p style="font-size: 32px; font-weight: bold; letter-spacing: 6px; margin: 16px 0;">${this.escapeHtml(code)}</p>
+        <p>It expires in 10 minutes.</p>
+        <p style="color: #666;">If you did not request this code, you can safely ignore this email.</p>
+      </div>
+    `;
+
+    await this.send({
+      to,
+      subject: 'Your Roommate NG verification code',
+      text,
+      html,
     });
   }
 
@@ -60,10 +117,7 @@ export class EmailService {
       <pre>${this.escapeHtml(payload.message)}</pre>
     `;
 
-    await this.transporter.sendMail({
-      from: process.env.SMTP_USER
-        ? `"Roommate NG" <${process.env.SMTP_USER}>`
-        : supportEmail,
+    await this.send({
       to: supportEmail,
       subject: `[Support] ${payload.title}`,
       text,
@@ -111,10 +165,7 @@ export class EmailService {
       (phone = ${this.escapeHtml(payload.phone)}).</p>
     `;
 
-    await this.transporter.sendMail({
-      from: process.env.SMTP_USER
-        ? `"Roommate NG" <${process.env.SMTP_USER}>`
-        : supportEmail,
+    await this.send({
       to: supportEmail,
       subject: `[${subject}] ${payload.name} (${payload.phone})`,
       text,
@@ -178,10 +229,7 @@ export class EmailService {
       <pre>${this.escapeHtml(payload.coverNote)}</pre>
     `;
 
-    await this.transporter.sendMail({
-      from: process.env.SMTP_USER
-        ? `"Roommate NG" <${process.env.SMTP_USER}>`
-        : supportEmail,
+    await this.send({
       to: supportEmail,
       subject: `[Job Application] ${payload.position} — ${payload.fullName}`,
       text,

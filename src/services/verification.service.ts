@@ -1,5 +1,7 @@
 import 'dotenv/config';
+import { randomInt } from 'node:crypto';
 import { supabase } from '../config/supabase.js';
+import { emailService } from './email.service.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import type {
   ConfirmVerificationInput,
@@ -34,13 +36,20 @@ export class VerificationService {
   }
 
   /**
-   * Stores a fixed mock OTP (7530) for the user's contact on the given channel
-   * and returns it. No external delivery provider is used.
+   * Stores the OTP issued for the user's contact on the given channel.
+   *
+   * Email OTPs are randomly generated and delivered via Resend (the code is
+   * never returned in the API response). WhatsApp remains a fixed mock code
+   * (7530) returned in the response since no delivery provider is wired up
+   * for it yet.
    */
   async initiate(userId: string, { channel }: InitiateVerificationInput) {
     const target = await this.getTarget(userId, channel);
 
-    const code = '7530';
+    const isEmail = channel === 'email';
+    const code = isEmail
+      ? randomInt(0, 10000).toString().padStart(4, '0')
+      : '7530';
     const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000).toISOString();
 
     // Invalidate any previously issued, un-consumed codes for this channel so
@@ -74,14 +83,46 @@ export class VerificationService {
       );
     }
 
-    return {
+    if (isEmail) {
+      try {
+        await emailService.sendVerificationCode({ to: target, code });
+      } catch (err) {
+        // The code was never delivered, so consume it to avoid leaving a valid
+        // but unreachable OTP behind; the caller can retry for a fresh one.
+        await supabase
+          .from('verification_codes')
+          .update({ consumed_at: new Date().toISOString() })
+          .eq('user_id', userId)
+          .eq('channel', channel)
+          .is('consumed_at', null);
+
+        throw new HttpError(
+          500,
+          `Failed to send verification email: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
+    const response: {
+      channel: VerificationChannel;
+      target: string;
+      expiresAt: string;
+      resendAfterSeconds: number;
+      provider: string;
+      code?: string;
+    } = {
       channel,
       target: this.mask(target, channel),
       expiresAt,
       resendAfterSeconds: 30,
-      code,
-      provider: 'mock',
+      provider: isEmail ? 'email' : 'mock',
     };
+
+    if (!isEmail) {
+      response.code = code;
+    }
+
+    return response;
   }
 
   /**
