@@ -97,7 +97,7 @@ export class EmailService {
       <!-- BEGIN: EmailWrapper -->
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F1F5F9;">
       <tr>
-      <td align="center" style="padding:24px 16px;">
+      <td align="center" style="padding:16px 12px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; background-color:#FFFFFF; border:1px solid #E2E8F0; border-radius:16px;">
       <!-- Top Decorative Brand Bar -->
       <tr>
@@ -105,9 +105,9 @@ export class EmailService {
       </tr>
       <!-- Inner Padding Container -->
       <tr>
-      <td style="padding:40px 28px 48px;">
+      <td style="padding:28px 24px 32px;">
       <!-- BEGIN: BrandHeader -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:40px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
       <tr>
       <td valign="middle">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0">
@@ -128,26 +128,26 @@ export class EmailService {
       </table>
       <!-- END: BrandHeader -->
       <!-- BEGIN: ContentBody -->
-      <h1 style="margin:0 0 32px; font-size:32px; font-weight:800; color:#080E21; line-height:1.15; letter-spacing:-0.03em;">
+      <h1 style="margin:0 0 20px; font-size:28px; font-weight:800; color:#080E21; line-height:1.15; letter-spacing:-0.03em;">
       Enter this code to sign in
       </h1>
       <!-- High-Impact Verification Code Display -->
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 36px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;">
       <tr>
-      <td style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:16px; padding:16px 32px;">
-      <div style="font-family:Space Mono,SF Mono,Consolas,Menlo,monospace; font-size:42px; font-weight:700; color:#080E21; letter-spacing:0.2em; line-height:1.2; text-align:left;">
+      <td style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:16px; padding:10px 24px;">
+      <div style="font-family:Space Mono,SF Mono,Consolas,Menlo,monospace; font-size:34px; font-weight:700; color:#080E21; letter-spacing:0.2em; line-height:1.2; text-align:left;">
       ${this.escapeHtml(codeDisplay)}
       </div>
       </td>
       </tr>
       </table>
-      <p style="margin:0 0 36px; font-size:12px; color:#64748B; font-weight:500;">Click or tap code to select &amp; copy</p>
+      <p style="margin:0 0 24px; font-size:12px; color:#64748B; font-weight:500;">Click or tap code to select &amp; copy</p>
       <!-- Instructional Paragraphs -->
-      <div style="margin-bottom:40px; font-size:16px; color:#334155; line-height:1.65;">
-      <p style="margin:0 0 20px;">
+      <div style="margin-bottom:24px; font-size:15px; color:#334155; line-height:1.5;">
+      <p style="margin:0 0 12px;">
       Enter the code above on your device to sign in to FairNest Housing. This code will expire in <strong style="font-weight:600; color:#0F172A;">10 minutes</strong>.
       </p>
-      <p style="margin:0 0 20px;">
+      <p style="margin:0 0 12px;">
       If you didn't send this request, you can ignore this email.
       </p>
       <p style="margin:0; color:#475569;">
@@ -155,12 +155,12 @@ export class EmailService {
       </p>
       </div>
       <!-- Sign-off Block -->
-      <div style="padding:6px 0 8px; font-size:17px; font-weight:700; color:#080E21;">
+      <div style="padding:4px 0 6px; font-size:15px; font-weight:700; color:#080E21;">
       The FairNest team
       </div>
       <!-- END: ContentBody -->
       <!-- Crisp Horizontal Divider -->
-      <hr style="margin:36px 0; border:none; border-top:2px solid #F1F5F9;"/>
+      <hr style="margin:24px 0; border:none; border-top:2px solid #F1F5F9;"/>
       <!-- BEGIN: EmailFooter -->
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:13px; color:#64748B;">
       <!-- Support Links & Entity Lockup -->
@@ -175,14 +175,14 @@ export class EmailService {
       </tr>
       <!-- Legal & Account Navigation -->
       <tr>
-      <td colspan="2" style="padding:8px 0 0; font-size:12.5px;">
+      <td colspan="2" style="padding:6px 0 0; font-size:12.5px;">
       <a href="https://www.fairnesthousing.com/legal/terms" style="color:#64748B; text-decoration:underline; margin-right:18px;">Terms of Use</a>
       <a href="https://www.fairnesthousing.com/legal/privacy" style="color:#64748B; text-decoration:underline;">Privacy Policy</a>
       </td>
       </tr>
       <!-- Audit & Transmission Microcopy -->
       <tr>
-      <td colspan="2" style="padding:20px 0 0; border-top:1px solid #F1F5F9; font-size:12px; color:#94A3B8; line-height:1.5;">
+      <td colspan="2" style="padding:14px 0 0; border-top:1px solid #F1F5F9; font-size:12px; color:#94A3B8; line-height:1.5;">
       This message was mailed to <span style="color:#475569; font-family:Consolas,Menlo,monospace; font-weight:500;">${this.escapeHtml(to)}</span> by FairNest Housing as part of your account security protocols.
       </td>
       </tr>
