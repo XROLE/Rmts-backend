@@ -432,6 +432,7 @@ export class AmbassadorService {
   async updateProfile(userId: string, payload: UpdateAmbassadorProfileInput) {
     const {
       fullName,
+      email,
       whatsappNumber,
       profilePictureUrl,
       stateCovering,
@@ -469,20 +470,33 @@ export class AmbassadorService {
       profileUpdate.is_approved = false;
     }
 
-    const { data, error } = await supabase
-      .from('ambassador_profiles')
-      .update(profileUpdate)
-      .eq('user_id', userId)
-      .select(PROFILE_SELECT)
-      .single();
+    // Only touch the ambassador_profiles row when profile fields actually
+    // changed. Payloads limited to auth-level fields (email, whatsappNumber,
+    // fullName) leave profileUpdate empty; issuing an empty PATCH against
+    // PostgREST returns no single object and breaks .single() / .maybeSingle().
+    let profileData: Record<string, unknown> | null = null;
+    if (Object.keys(profileUpdate).length > 0) {
+      const { data, error } = await supabase
+        .from('ambassador_profiles')
+        .update(profileUpdate)
+        .eq('user_id', userId)
+        .select(PROFILE_SELECT)
+        .maybeSingle();
 
-    if (error) {
-      throw new HttpError(500, `Failed to update profile: ${error.message}`);
+      if (error) {
+        throw new HttpError(500, `Failed to update profile: ${error.message}`);
+      }
+      profileData = data;
     }
 
-    if (fullName !== undefined || whatsappNumber !== undefined) {
+    if (
+      fullName !== undefined ||
+      email !== undefined ||
+      whatsappNumber !== undefined
+    ) {
       const userUpdate: Record<string, unknown> = {};
       if (fullName !== undefined) userUpdate.full_name = fullName;
+      if (email !== undefined) userUpdate.email = email;
       if (whatsappNumber !== undefined) userUpdate.whatsapp_number = whatsappNumber;
 
       const { error: userError } = await supabase
@@ -494,10 +508,18 @@ export class AmbassadorService {
         throw new HttpError(500, `Failed to update user: ${userError.message}`);
       }
 
-      if (fullName !== undefined) {
+      if (fullName !== undefined || email !== undefined) {
+        const metadata: Record<string, unknown> = {};
+        if (fullName !== undefined) metadata.full_name = fullName;
+        if (email !== undefined) metadata.email = email;
+
+        const adminAttrs: { email?: string; user_metadata?: Record<string, unknown> } = {};
+        if (email !== undefined) adminAttrs.email = email;
+        if (Object.keys(metadata).length > 0) adminAttrs.user_metadata = metadata;
+
         const { error: metaError } = await supabase.auth.admin.updateUserById(
           userId,
-          { user_metadata: { full_name: fullName } },
+          adminAttrs,
         );
         if (metaError) {
           throw new HttpError(500, `Failed to update user metadata: ${metaError.message}`);
@@ -505,7 +527,7 @@ export class AmbassadorService {
       }
     }
 
-    return data;
+    return profileData;
   }
 
   /**
