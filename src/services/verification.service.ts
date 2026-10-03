@@ -113,6 +113,7 @@ export class VerificationService {
           name: OTP_TEMPLATE_NAME,
           language: OTP_TEMPLATE_LANG,
           bodyParams: [code],
+          urlButtons: [{ index: 0, url: code }],
         });
       } catch (err) {
         await this.failDelivery(userId, channel);
