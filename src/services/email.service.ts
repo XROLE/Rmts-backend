@@ -78,12 +78,12 @@ export class EmailService {
 
     await this.send({
       to,
-      subject: 'FairNest Housing Verification Code',
+      subject: 'Verify your email',
       text,
       html: this.buildOtpEmail({
         to,
         code,
-        title: 'FairNest Housing - Verification Code',
+        title: 'Verify your email',
         badge: 'Secure Sign In',
         heading: 'Enter this code to sign in',
         instructions: [
@@ -118,12 +118,12 @@ export class EmailService {
 
     await this.send({
       to,
-      subject: 'FairNest Housing Password Reset Code',
+      subject: 'Reset your password',
       text,
       html: this.buildOtpEmail({
         to,
         code,
-        title: 'FairNest Housing - Password Reset Code',
+        title: 'Reset your password',
         badge: 'Reset Password',
         heading: 'Reset your password',
         instructions: [
@@ -203,7 +203,7 @@ export class EmailService {
       </table>
       <!-- END: BrandHeader -->
       <!-- BEGIN: ContentBody -->
-      <h1 style="margin:0 0 16px; font-size:28px; font-weight:800; color:#080E21; line-height:1.15; letter-spacing:-0.03em;">
+      <h1 style="margin:24px 0 16px; font-size:28px; font-weight:800; color:#080E21; line-height:1.15; letter-spacing:-0.03em;">
       ${this.escapeHtml(heading)}
       </h1>
       <!-- High-Impact Verification Code Display -->
