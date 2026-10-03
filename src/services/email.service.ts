@@ -64,8 +64,6 @@ export class EmailService {
   async sendVerificationCode(payload: { to: string; code: string }): Promise<void> {
     const { to, code } = payload;
 
-    const codeDisplay = [...code].join(' ');
-
     const text = [
       `Enter this code to sign in to FairNest Housing: ${code}`,
       ``,
@@ -78,12 +76,89 @@ export class EmailService {
       `The FairNest team`,
     ].join('\n');
 
-    const html = `
+    await this.send({
+      to,
+      subject: 'FairNest Housing Verification Code',
+      text,
+      html: this.buildOtpEmail({
+        to,
+        code,
+        title: 'FairNest Housing - Verification Code',
+        badge: 'Secure Sign In',
+        heading: 'Enter this code to sign in',
+        instructions: [
+          `Enter the code above on your device to sign in to FairNest Housing. This code will expire in`,
+          `<strong style="font-weight:600; color:#0F172A;">10 minutes</strong>.`,
+          `<br/><br/>`,
+          `If you didn't send this request, you can ignore this email.`,
+          `<br/><br/>`,
+          `<span style="color:#475569;">To protect your roommate profile and housing preferences, don't share this code with anyone outside your trusted household.</span>`,
+        ].join(' '),
+      }),
+    });
+  }
+
+  /**
+   * Sends a one-time password reset code to the user's email address.
+   */
+  async sendPasswordResetCode(payload: { to: string; code: string }): Promise<void> {
+    const { to, code } = payload;
+
+    const text = [
+      `Use this code to reset your FairNest Housing password: ${code}`,
+      ``,
+      `This code will expire in 10 minutes.`,
+      ``,
+      `If you didn't request a password reset, you can ignore this email and your password will stay unchanged.`,
+      ``,
+      `Don't share this code with anyone. Our team will never ask you for it.`,
+      ``,
+      `The FairNest team`,
+    ].join('\n');
+
+    await this.send({
+      to,
+      subject: 'FairNest Housing Password Reset Code',
+      text,
+      html: this.buildOtpEmail({
+        to,
+        code,
+        title: 'FairNest Housing - Password Reset Code',
+        badge: 'Reset Password',
+        heading: 'Reset your password',
+        instructions: [
+          `Use the code above to reset your FairNest Housing password. This code will expire in`,
+          `<strong style="font-weight:600; color:#0F172A;">10 minutes</strong>.`,
+          `<br/><br/>`,
+          `If you didn't request a password reset, you can ignore this email and your password will stay unchanged.`,
+          `<br/><br/>`,
+          `<span style="color:#475569;">Don't share this code with anyone. Our team will never ask you for it.</span>`,
+        ].join(' '),
+      }),
+    });
+  }
+
+  /**
+   * Builds the branded OTP email template shared by the verification and
+   * password reset flows.
+   */
+  private buildOtpEmail(payload: {
+    to: string;
+    code: string;
+    title: string;
+    badge: string;
+    heading: string;
+    instructions: string;
+  }): string {
+    const { to, code, title, badge, heading, instructions } = payload;
+    const codeDisplay = [...code].join(' ');
+
+    return `
       <!DOCTYPE html>
       <html lang="en"><head>
       <meta charset="utf-8"/>
       <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-      <title>FairNest Housing - Verification Code</title>
+      <title>${this.escapeHtml(title)}</title>
       <!-- Google Font: Plus Jakarta Sans -->
       <link href="https://fonts.googleapis.com" rel="preconnect"/>
       <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
@@ -122,14 +197,14 @@ export class EmailService {
       </table>
       </td>
       <td align="right" valign="middle">
-      <span style="display:inline-block; padding:4px 12px; border-radius:999px; background-color:#ECFDF5; color:#047857; border:1px solid #A7F3D0; font-size:12px; font-weight:600;">Secure Sign In</span>
+      <span style="display:inline-block; padding:4px 12px; border-radius:999px; background-color:#ECFDF5; color:#047857; border:1px solid #A7F3D0; font-size:12px; font-weight:600;">${this.escapeHtml(badge)}</span>
       </td>
       </tr>
       </table>
       <!-- END: BrandHeader -->
       <!-- BEGIN: ContentBody -->
       <h1 style="margin:0 0 16px; font-size:28px; font-weight:800; color:#080E21; line-height:1.15; letter-spacing:-0.03em;">
-      Enter this code to sign in
+      ${this.escapeHtml(heading)}
       </h1>
       <!-- High-Impact Verification Code Display -->
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;">
@@ -145,9 +220,7 @@ export class EmailService {
       <!-- Instructional Paragraphs -->
       <div style="margin-bottom:16px; font-size:15px; color:#334155; line-height:1.5;">
       <p style="margin:0;">
-      Enter the code above on your device to sign in to FairNest Housing. This code will expire in <strong style="font-weight:600; color:#0F172A;">10 minutes</strong>.<br/><br/>
-      If you didn't send this request, you can ignore this email.<br/><br/>
-      <span style="color:#475569;">To protect your roommate profile and housing preferences, don't share this code with anyone outside your trusted household.</span>
+      ${instructions}
       </p>
       </div>
       <!-- Sign-off Block -->
@@ -195,13 +268,6 @@ export class EmailService {
       <!-- END: EmailWrapper -->
       </body></html>
     `;
-
-    await this.send({
-      to,
-      subject: 'FairNest Housing Verification Code',
-      text,
-      html,
-    });
   }
 
   async sendSupportTicket(payload: SupportEmailPayload): Promise<void> {
