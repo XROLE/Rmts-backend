@@ -50,6 +50,7 @@ export const updateAmbassadorProfileSchema = z.object({
   body: z
     .object({
       fullName: z.string().min(1, 'Full name is required').max(100).optional(),
+      email: z.string().email('A valid email is required').optional(),
       whatsappNumber: z
         .string()
         .regex(
