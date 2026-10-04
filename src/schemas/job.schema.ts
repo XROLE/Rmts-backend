@@ -47,6 +47,10 @@ const WORK_MODE = z.enum(['onsite', 'hybrid', 'remote'], {
   }),
 });
 
+const JOB_TYPE = z.enum(['paid', 'volunteer'], {
+  errorMap: () => ({ message: "Job type must be one of: paid, volunteer" }),
+});
+
 const CURRENCY = z.enum(['USD', 'NGN'], {
   errorMap: () => ({ message: "Currency must be 'USD' or 'NGN'" }),
 });
@@ -62,6 +66,7 @@ const JOB_POSTING_FIELDS = z.object({
   experienceLevel: EXPERIENCE_LEVEL,
   workMode: WORK_MODE,
   location: z.string().trim().min(1, 'Location is required').max(100),
+  jobType: JOB_TYPE.default('paid'),
   salaryMin: z.coerce
     .number({ invalid_type_error: 'Salary minimum must be a number' })
     .min(0, 'Salary minimum cannot be negative')
@@ -121,6 +126,25 @@ export const getApplicationResumeSchema = z.object({
   }),
 });
 
+const APPLICATION_STATUS = z.enum(
+  ['new', 'to-be-interviewed', 'interviewed', 'rejected', 'archived', 'offered'],
+  {
+    errorMap: () => ({
+      message:
+        "Status must be one of: new, to-be-interviewed, interviewed, rejected, archived, offered",
+    }),
+  },
+);
+
+export const updateJobApplicationStatusSchema = z.object({
+  params: z.object({
+    applicationId: z.string().uuid('A valid application ID is required'),
+  }),
+  body: z.object({
+    status: APPLICATION_STATUS,
+  }),
+});
+
 export const createJobApplicationSchema = z.object({
   body: z.object({
     jobPostingId: z.string().uuid('A valid job posting ID is required').optional(),
@@ -145,7 +169,8 @@ export const createJobApplicationSchema = z.object({
     noticePeriod: z.string().trim().min(1, 'Notice period is required').max(100),
     expectedSalary: z.coerce
       .number({ invalid_type_error: 'Expected salary must be a number' })
-      .min(0, 'Expected salary cannot be negative'),
+      .min(0, 'Expected salary cannot be negative')
+      .optional(),
   }),
 });
 

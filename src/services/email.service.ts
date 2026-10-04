@@ -1,6 +1,5 @@
 import 'dotenv/config';
-import nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
+import { Resend } from 'resend';
 
 export interface SupportEmailPayload {
   title: string;
@@ -9,28 +8,266 @@ export interface SupportEmailPayload {
   userEmail?: string;
 }
 
+const DEFAULT_RESEND_FROM = '"Roommate NG" <onboarding@resend.dev>';
+
 /**
- * Sends application emails via SMTP. Configured for Gmail by default.
- * Uses an app password on the sending account (SMTP_USER / SMTP_PASS).
+ * Sends application emails via Resend. Requires RESEND_API_KEY and a verified
+ * RESEND_FROM sender (a domain you own in Resend, or onboarding@resend.dev in
+ * test). A missing API key only fails at send-time so a config-less local run
+ * does not crash on boot.
  */
 export class EmailService {
-  private transporter: Transporter;
+  private resend: Resend | null;
 
   constructor() {
-    const host = process.env.SMTP_HOST ?? 'smtp.gmail.com';
-    const port = Number(process.env.SMTP_PORT ?? 465);
-    const user = process.env.SMTP_USER;
-    const pass = process.env.SMTP_PASS;
+    const apiKey = process.env.RESEND_API_KEY;
+    this.resend = apiKey ? new Resend(apiKey) : null;
+  }
 
-    this.transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: user && pass ? { user, pass } : undefined,
-      connectionTimeout: 10_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 10_000,
+  private resolveFrom(): string {
+    return process.env.RESEND_FROM ?? DEFAULT_RESEND_FROM;
+  }
+
+  private async send(payload: {
+    to: string;
+    subject: string;
+    text: string;
+    html: string;
+  }): Promise<void> {
+    if (!this.resend) {
+      throw new Error(
+        'Email service is not configured. Set RESEND_API_KEY and RESEND_FROM in your environment.',
+      );
+    }
+
+    try {
+      const { error } = await this.resend.emails.send({
+        from: this.resolveFrom(),
+        to: payload.to,
+        subject: payload.subject,
+        text: payload.text,
+        html: payload.html,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    } catch (err) {
+      if (err instanceof Error) throw err;
+      throw new Error('Failed to send email via Resend');
+    }
+  }
+
+  /**
+   * Sends a one-time verification code to the user's email address.
+   */
+  async sendVerificationCode(payload: { to: string; code: string }): Promise<void> {
+    const { to, code } = payload;
+
+    const text = [
+      `Enter this code to sign in to FairNest Housing: ${code}`,
+      ``,
+      `This code will expire in 10 minutes.`,
+      ``,
+      `To protect your roommate profile and housing preferences, don't share this code with anyone outside your trusted household.`,
+      ``,
+      `If you didn't send this request, you can ignore this email.`,
+      ``,
+      `The FairNest team`,
+    ].join('\n');
+
+    await this.send({
+      to,
+      subject: 'Verify your email',
+      text,
+      html: this.buildOtpEmail({
+        to,
+        code,
+        title: 'Verify your email',
+        badge: 'Secure Sign In',
+        heading: 'Enter this code to sign in',
+        instructions: [
+          `Enter the code above on your device to sign in to FairNest Housing. This code will expire in`,
+          `<strong style="font-weight:600; color:#0F172A;">10 minutes</strong>.`,
+          `<br/><br/>`,
+          `If you didn't send this request, you can ignore this email.`,
+          `<br/><br/>`,
+          `<span style="color:#475569;">To protect your roommate profile and housing preferences, don't share this code with anyone outside your trusted household.</span>`,
+        ].join(' '),
+      }),
     });
+  }
+
+  /**
+   * Sends a one-time password reset code to the user's email address.
+   */
+  async sendPasswordResetCode(payload: { to: string; code: string }): Promise<void> {
+    const { to, code } = payload;
+
+    const text = [
+      `Use this code to reset your FairNest Housing password: ${code}`,
+      ``,
+      `This code will expire in 10 minutes.`,
+      ``,
+      `If you didn't request a password reset, you can ignore this email and your password will stay unchanged.`,
+      ``,
+      `Don't share this code with anyone. Our team will never ask you for it.`,
+      ``,
+      `The FairNest team`,
+    ].join('\n');
+
+    await this.send({
+      to,
+      subject: 'Reset your password',
+      text,
+      html: this.buildOtpEmail({
+        to,
+        code,
+        title: 'Reset your password',
+        badge: 'Reset Password',
+        heading: 'Reset your password',
+        instructions: [
+          `Use the code above to reset your FairNest Housing password. This code will expire in`,
+          `<strong style="font-weight:600; color:#0F172A;">10 minutes</strong>.`,
+          `<br/><br/>`,
+          `If you didn't request a password reset, you can ignore this email and your password will stay unchanged.`,
+          `<br/><br/>`,
+          `<span style="color:#475569;">Don't share this code with anyone. Our team will never ask you for it.</span>`,
+        ].join(' '),
+      }),
+    });
+  }
+
+  /**
+   * Builds the branded OTP email template shared by the verification and
+   * password reset flows.
+   */
+  private buildOtpEmail(payload: {
+    to: string;
+    code: string;
+    title: string;
+    badge: string;
+    heading: string;
+    instructions: string;
+  }): string {
+    const { to, code, title, badge, heading, instructions } = payload;
+    const codeDisplay = [...code].join(' ');
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en"><head>
+      <meta charset="utf-8"/>
+      <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+      <title>${this.escapeHtml(title)}</title>
+      <!-- Google Font: Plus Jakarta Sans -->
+      <link href="https://fonts.googleapis.com" rel="preconnect"/>
+      <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+      <style data-purpose="email-resets">
+        body { margin: 0; padding: 0; }
+        table { border-collapse: collapse; }
+      </style>
+      </head>
+      <body style="margin:0; padding:0; background-color:#F1F5F9; font-family:Plus Jakarta Sans,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased;">
+      <!-- BEGIN: EmailWrapper -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F1F5F9;">
+      <tr>
+      <td align="center" style="padding:0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; background-color:#FFFFFF; border:1px solid #E2E8F0; border-radius:16px;">
+      <!-- Top Decorative Brand Bar -->
+      <tr>
+      <td height="6" style="height:6px; font-size:0; line-height:0; background-color:#080E21; background-image:linear-gradient(to right,#080E21,#0284C7,#2EB1FF);"></td>
+      </tr>
+      <!-- Inner Padding Container -->
+      <tr>
+      <td style="padding:20px 20px 16px;">
+      <!-- BEGIN: BrandHeader -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+      <td valign="middle">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+      <td valign="middle">
+      <div style="width:44px; height:44px; background-color:#080E21; border-radius:12px; text-align:center; line-height:44px; font-size:24px; font-weight:800; color:#FFFFFF;">F</div>
+      </td>
+      <td valign="middle" style="padding-left:12px;">
+      <span style="font-size:22px; font-weight:800; color:#080E21; letter-spacing:-0.02em;">FairNest<span style="color:#0284C7; font-weight:600; font-size:17px;"> Housing</span></span>
+      </td>
+      </tr>
+      </table>
+      </td>
+      <td align="right" valign="middle">
+      <span style="display:inline-block; padding:4px 12px; border-radius:999px; background-color:#ECFDF5; color:#047857; border:1px solid #A7F3D0; font-size:12px; font-weight:600;">${this.escapeHtml(badge)}</span>
+      </td>
+      </tr>
+      </table>
+      <!-- END: BrandHeader -->
+      <!-- BEGIN: ContentBody -->
+      <h1 style="margin:24px 0 16px; font-size:28px; font-weight:800; color:#080E21; line-height:1.15; letter-spacing:-0.03em;">
+      ${this.escapeHtml(heading)}
+      </h1>
+      <!-- High-Impact Verification Code Display -->
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;">
+      <tr>
+      <td style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:16px; padding:10px 24px;">
+      <div style="font-family:Space Mono,SF Mono,Consolas,Menlo,monospace; font-size:34px; font-weight:700; color:#080E21; letter-spacing:0.2em; line-height:1.2; text-align:left;">
+      ${this.escapeHtml(codeDisplay)}
+      </div>
+      </td>
+      </tr>
+      </table>
+      <p style="margin:0 0 12px; font-size:12px; color:#64748B; font-weight:500;">Click or tap code to select &amp; copy</p>
+      <!-- Instructional Paragraphs -->
+      <div style="margin-bottom:16px; font-size:15px; color:#334155; line-height:1.5;">
+      <p style="margin:0;">
+      ${instructions}
+      </p>
+      </div>
+      <!-- Sign-off Block -->
+      <div style="padding:2px 0 4px; font-size:15px; font-weight:700; color:#080E21;">
+      The FairNest team
+      </div>
+      <!-- END: ContentBody -->
+      <!-- Crisp Horizontal Divider -->
+      <hr style="margin:16px 0; border:none; border-top:2px solid #F1F5F9;"/>
+      <!-- BEGIN: EmailFooter -->
+      <div style="font-size:13px; color:#64748B;">
+      <!-- Support Links & Entity Lockup -->
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+      <tr>
+      <td valign="top" width="36">
+      <div style="width:32px; height:32px; background-color:#F1F5F9; border:1px solid #E2E8F0; border-radius:8px; text-align:center; line-height:32px; font-size:16px; font-weight:700; color:#080E21;">F</div>
+      </td>
+      <td valign="top" style="padding-left:12px;">
+      <p style="margin:0 0 4px; font-size:13px; color:#475569; font-weight:500;">Questions? Visit the Help Center</p>
+      <p style="margin:0; font-size:12px; color:#94A3B8;">FairNest Housing Technologies Limited &bull; Co-living &amp; Verified Roommates</p>
+      </td>
+      </tr>
+      <!-- Legal & Account Navigation -->
+      <tr>
+      <td colspan="2" style="padding:6px 0 0; font-size:12.5px;">
+      <a href="https://www.fairnesthousing.com/legal/terms" style="color:#64748B; text-decoration:underline; margin-right:18px;">Terms of Use</a>
+      <a href="https://www.fairnesthousing.com/legal/privacy" style="color:#64748B; text-decoration:underline;">Privacy Policy</a>
+      </td>
+      </tr>
+      <!-- Audit & Transmission Microcopy -->
+      <tr>
+      <td colspan="2" style="padding:12px 0 0; border-top:1px solid #F1F5F9; font-size:12px; color:#94A3B8; line-height:1.5;">
+      This message was mailed to <span style="color:#475569; font-family:Consolas,Menlo,monospace; font-weight:500;">${this.escapeHtml(to)}</span> by FairNest Housing as part of your account security protocols.
+      </td>
+      </tr>
+      </table>
+      </div>
+      <!-- END: EmailFooter -->
+      </td>
+      </tr>
+      </table>
+      </td>
+      </tr>
+      </table>
+      <!-- END: EmailWrapper -->
+      </body></html>
+    `;
   }
 
   async sendSupportTicket(payload: SupportEmailPayload): Promise<void> {
@@ -60,10 +297,7 @@ export class EmailService {
       <pre>${this.escapeHtml(payload.message)}</pre>
     `;
 
-    await this.transporter.sendMail({
-      from: process.env.SMTP_USER
-        ? `"Roommate NG" <${process.env.SMTP_USER}>`
-        : supportEmail,
+    await this.send({
       to: supportEmail,
       subject: `[Support] ${payload.title}`,
       text,
@@ -111,10 +345,7 @@ export class EmailService {
       (phone = ${this.escapeHtml(payload.phone)}).</p>
     `;
 
-    await this.transporter.sendMail({
-      from: process.env.SMTP_USER
-        ? `"Roommate NG" <${process.env.SMTP_USER}>`
-        : supportEmail,
+    await this.send({
       to: supportEmail,
       subject: `[${subject}] ${payload.name} (${payload.phone})`,
       text,
@@ -178,10 +409,7 @@ export class EmailService {
       <pre>${this.escapeHtml(payload.coverNote)}</pre>
     `;
 
-    await this.transporter.sendMail({
-      from: process.env.SMTP_USER
-        ? `"Roommate NG" <${process.env.SMTP_USER}>`
-        : supportEmail,
+    await this.send({
       to: supportEmail,
       subject: `[Job Application] ${payload.position} — ${payload.fullName}`,
       text,

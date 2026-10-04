@@ -1,5 +1,12 @@
 import 'dotenv/config';
+import { randomInt } from 'node:crypto';
 import { supabase } from '../config/supabase.js';
+import { emailService } from './email.service.js';
+import { whatsappService } from './whatsapp.service.js';
+import {
+  normalizePhoneToE164,
+  normalizeAnyPhoneToE164,
+} from '../utils/normalizePhone.js';
 import { HttpError } from '../middleware/errorHandler.js';
 import type {
   ConfirmVerificationInput,
@@ -9,6 +16,11 @@ import type {
 
 const OTP_TTL_SECONDS = 600; // 10 minutes
 const OTP_MAX_ATTEMPTS = 5;
+
+/** Approved WhatsApp template that carries the verification code ({1}). */
+const OTP_TEMPLATE_NAME =
+  process.env.WHATSAPP_OTP_TEMPLATE_NAME ?? 'fairnest_housing_auth_otp';
+const OTP_TEMPLATE_LANG = process.env.WHATSAPP_OTP_TEMPLATE_LANG ?? 'en';
 
 const CHANNEL_TARGET: Record<VerificationChannel, { userColumn: string }> = {
   email: { userColumn: 'email' },
@@ -34,13 +46,19 @@ export class VerificationService {
   }
 
   /**
-   * Stores a fixed mock OTP (7530) for the user's contact on the given channel
-   * and returns it. No external delivery provider is used.
+   * Stores the OTP issued for the user's contact on the given channel.
+   *
+   * Email OTPs are randomly generated and delivered via Resend; WhatsApp OTPs
+   * are randomly generated and delivered via the approved
+   * fairnest_housing_auth_otp message template on the Meta WhatsApp Business
+   * Cloud API. The email code is never returned in the API response; the
+   * WhatsApp code is still echoed back (existing mock behaviour kept).
    */
   async initiate(userId: string, { channel }: InitiateVerificationInput) {
     const target = await this.getTarget(userId, channel);
 
-    const code = '7530';
+    const isEmail = channel === 'email';
+    const code = randomInt(0, 10000).toString().padStart(4, '0');
     const expiresAt = new Date(Date.now() + OTP_TTL_SECONDS * 1000).toISOString();
 
     // Invalidate any previously issued, un-consumed codes for this channel so
@@ -74,14 +92,75 @@ export class VerificationService {
       );
     }
 
-    return {
+    if (isEmail) {
+      try {
+        await emailService.sendVerificationCode({ to: target, code });
+      } catch (err) {
+        await this.failDelivery(userId, channel);
+        throw new HttpError(
+          500,
+          `Failed to send verification email: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    } else {
+      const phoneE164 = normalizePhoneToE164(target) ?? normalizeAnyPhoneToE164(target);
+      if (!phoneE164) {
+        throw new HttpError(400, 'A valid phone number is required.');
+      }
+      try {
+        await whatsappService.sendTemplate({
+          to: phoneE164,
+          name: OTP_TEMPLATE_NAME,
+          language: OTP_TEMPLATE_LANG,
+          bodyParams: [code],
+          urlButtons: [{ index: 0, url: code }],
+        });
+      } catch (err) {
+        await this.failDelivery(userId, channel);
+        throw new HttpError(
+          500,
+          `Failed to send WhatsApp verification code: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
+    const response: {
+      channel: VerificationChannel;
+      target: string;
+      expiresAt: string;
+      resendAfterSeconds: number;
+      provider: string;
+      code?: string;
+    } = {
       channel,
       target: this.mask(target, channel),
       expiresAt,
       resendAfterSeconds: 30,
-      code,
-      provider: 'mock',
+      provider: isEmail ? 'email' : 'whatsapp',
     };
+
+    if (!isEmail) {
+      response.code = code;
+    }
+
+    return response;
+  }
+
+  /**
+   * Consumes every un-consumed code for the user + channel so a code that was
+   * never actually delivered cannot be redeemed later; the caller can retry
+   * for a fresh one.
+   */
+  private async failDelivery(userId: string, channel: VerificationChannel) {
+    const { error } = await supabase
+      .from('verification_codes')
+      .update({ consumed_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('channel', channel)
+      .is('consumed_at', null);
+    if (error) {
+      console.error('[verification] failed to consume undelivered code:', error.message);
+    }
   }
 
   /**

@@ -1,7 +1,7 @@
 import { NextFunction, Response } from 'express';
-import { supabase } from '../config/supabase.js';
 import { HttpError } from './errorHandler.js';
 import type { AuthenticatedRequest } from './auth.js';
+import { getUserRole } from '../utils/role.js';
 
 /**
  * Restricts a route to users whose role is 'admin' or 'super_admin' (super
@@ -18,21 +18,13 @@ export async function requireAdmin(
       throw new HttpError(401, 'Authentication required');
     }
 
-    const { data, error } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', req.user.id)
-      .maybeSingle();
+    const role = await getUserRole(req.user.id);
 
-    if (error) {
-      throw new HttpError(500, `Failed to verify admin role: ${error.message}`);
-    }
-
-    if (!data) {
+    if (role === null) {
       throw new HttpError(404, 'User record not found');
     }
 
-    if (data.role !== 'admin' && data.role !== 'super_admin') {
+    if (role !== 'admin' && role !== 'super_admin') {
       throw new HttpError(403, 'Forbidden: admin access required');
     }
 

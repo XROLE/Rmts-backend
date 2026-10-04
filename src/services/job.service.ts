@@ -24,7 +24,7 @@ const APPLICATION_SELECT =
   'id, user_id, job_posting_id, full_name, email, phone_number, location, position, github_url, linkedin_url, resume_url, cover_note, notice_period, expected_salary_ngn, status, created_at';
 
 const POSTING_SELECT =
-  'id, title, department, employment_type, experience_level, work_mode, location, salary_min, salary_max, currency, show_salary, description, requirements, nice_to_haves, benefits, is_active, closing_date, created_by, created_at, updated_at';
+  'id, title, department, employment_type, experience_level, work_mode, location, job_type, salary_min, salary_max, currency, show_salary, description, requirements, nice_to_haves, benefits, is_active, closing_date, created_by, created_at, updated_at';
 
 export class JobService {
   /** Creates a job posting. Super-admin only (enforced at the route layer). */
@@ -38,6 +38,7 @@ export class JobService {
         experience_level: input.experienceLevel,
         work_mode: input.workMode,
         location: input.location,
+        job_type: input.jobType,
         salary_min: input.salaryMin ?? null,
         salary_max: input.salaryMax ?? null,
         currency: input.currency,
@@ -69,6 +70,7 @@ export class JobService {
       experienceLevel: 'experience_level',
       workMode: 'work_mode',
       location: 'location',
+      jobType: 'job_type',
       salaryMin: 'salary_min',
       salaryMax: 'salary_max',
       currency: 'currency',
@@ -112,14 +114,11 @@ export class JobService {
     return data;
   }
 
-  /** Lists active job postings, newest first. Public. */
+  /** Lists all job postings, newest first. Public. */
   async listPostings() {
-    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('job_postings')
       .select(POSTING_SELECT)
-      .eq('is_active', true)
-      .or(`closing_date.is.null,closing_date.gt.${nowIso}`)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -129,15 +128,26 @@ export class JobService {
     return data ?? [];
   }
 
-  /** Returns a single active job posting. Public. */
+  /** Lists all job postings (active or not), newest first. Super-admin only. */
+  async listAllPostings() {
+    const { data, error } = await supabase
+      .from('job_postings')
+      .select(POSTING_SELECT)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new HttpError(500, `Failed to list job postings: ${error.message}`);
+    }
+
+    return data ?? [];
+  }
+
+  /** Returns a single job posting. Public. */
   async getPosting(id: string) {
-    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from('job_postings')
       .select(POSTING_SELECT)
       .eq('id', id)
-      .eq('is_active', true)
-      .or(`closing_date.is.null,closing_date.gt.${nowIso}`)
       .maybeSingle();
 
     if (error) {
@@ -164,6 +174,10 @@ export class JobService {
     const resumeUrl = await this.uploadResume(file);
     const githubUrl = input.githubUrl?.trim() || null;
 
+    if (input.expectedSalary == null && !(await this.isVolunteerRole(input.jobPostingId))) {
+      throw new HttpError(400, 'Expected salary is required for paid job applications');
+    }
+
     const { data: application, error: insertError } = await supabase
       .from('job_applications')
       .insert({
@@ -179,7 +193,7 @@ export class JobService {
         resume_url: resumeUrl,
         cover_note: input.coverNote,
         notice_period: input.noticePeriod,
-        expected_salary_ngn: input.expectedSalary,
+        expected_salary_ngn: input.expectedSalary ?? null,
       })
       .select(APPLICATION_SELECT)
       .single();
@@ -213,6 +227,26 @@ export class JobService {
     return { applications: data ?? [], total: count ?? 0 };
   }
 
+  /** Updates an application's status. Super-admin only (enforced at the route layer). */
+  async updateApplicationStatus(applicationId: string, status: string) {
+    const { data, error } = await supabase
+      .from('job_applications')
+      .update({ status })
+      .eq('id', applicationId)
+      .select(APPLICATION_SELECT)
+      .maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to update job application status: ${error.message}`);
+    }
+
+    if (!data) {
+      throw new HttpError(404, 'Job application not found');
+    }
+
+    return data;
+  }
+
   /** Returns an application's stored resume reference. Super-admin only (route layer). */
   async getApplication(applicationId: string) {
     const { data, error } = await supabase
@@ -230,6 +264,27 @@ export class JobService {
     }
 
     return data as { id: string; resume_url: string | null; full_name: string };
+  }
+
+  /**
+   * Returns true when the referenced posting is a volunteer role. Postings
+   * that cannot be resolved (including applications submitted without a
+   * jobPostingId) are treated as paid, which keeps expected salary required.
+   */
+  private async isVolunteerRole(jobPostingId?: string): Promise<boolean> {
+    if (!jobPostingId) return false;
+
+    const { data, error } = await supabase
+      .from('job_postings')
+      .select('job_type')
+      .eq('id', jobPostingId)
+      .maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to resolve job posting: ${error.message}`);
+    }
+
+    return data?.job_type === 'volunteer';
   }
 
   /**
@@ -286,7 +341,7 @@ export class JobService {
     resume_url: string;
     cover_note: string;
     notice_period: string;
-    expected_salary_ngn: number;
+    expected_salary_ngn: number | null;
   }): Promise<void> {
     await emailService.sendJobApplication({
       fullName: application.full_name,
@@ -295,7 +350,10 @@ export class JobService {
       position: application.position,
       location: application.location,
       noticePeriod: application.notice_period,
-      expectedSalary: String(application.expected_salary_ngn),
+      expectedSalary:
+        application.expected_salary_ngn != null
+          ? String(application.expected_salary_ngn)
+          : 'Not specified (volunteer role)',
       coverNote: application.cover_note,
       resumeUrl: application.resume_url,
       linkedinUrl: application.linkedin_url ?? undefined,

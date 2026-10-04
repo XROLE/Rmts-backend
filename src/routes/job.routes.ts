@@ -10,6 +10,7 @@ import {
   getApplicationResumeSchema,
   getJobPostingSchema,
   listJobApplicationsSchema,
+  updateJobApplicationStatusSchema,
   updateJobPostingSchema,
 } from '../schemas/job.schema.js';
 import {
@@ -19,6 +20,7 @@ import {
   getJobPosting,
   listJobApplications,
   listJobPostings,
+  updateJobApplicationStatus,
   updateJobPosting,
 } from '../controllers/job.controller.js';
 
@@ -29,9 +31,9 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-// Public: browse open job postings.
+// Public: browse open job postings. Super admins (authenticated) see all postings.
 // Static /applications routes must be declared before the /:id param routes.
-router.get('/', listJobPostings);
+router.get('/', optionalAuth, listJobPostings);
 
 // Super admin: create a job posting.
 router.post(
@@ -59,6 +61,15 @@ router.get(
   requireSuperAdmin,
   validate(listJobApplicationsSchema),
   listJobApplications,
+);
+
+// Super admin: update a single application's status.
+router.patch(
+  '/applications/:applicationId/status',
+  requireAuth,
+  requireSuperAdmin,
+  validate(updateJobApplicationStatusSchema),
+  updateJobApplicationStatus,
 );
 
 // Super admin: stream a single application's resume from R2.

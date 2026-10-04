@@ -50,6 +50,10 @@ interface SendTemplateInput {
    * The payload strings are echoed back in the inbound button webhook,
    * e.g. message.button.payload, when the user taps a button. */
   buttonPayloads?: string[];
+  /** Optional URL-button suffixes (one per template URL button, keyed by the
+   * button's index). Fills the {{1}} placeholder in each URL button's link;
+   * required whenever a template contains a URL button with a placeholder. */
+  urlButtons?: Array<{ index: number; url: string }>;
 }
 
 /**
@@ -166,6 +170,17 @@ export class WhatsAppService {
           sub_type: 'quick_reply',
           index,
           parameters: [{ type: 'text', text: payload }],
+        });
+      });
+    }
+
+    if (input.urlButtons?.length) {
+      input.urlButtons.forEach(({ index, url }) => {
+        components.push({
+          type: 'button',
+          sub_type: 'url',
+          index,
+          parameters: [{ type: 'text', text: url }],
         });
       });
     }
