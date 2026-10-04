@@ -59,12 +59,18 @@ export class MatchService {
    * of those pairs. All scores are computed in memory, so this is best suited
    * to a few hundred profiles.
    */
-  async listMatches(limit: number, offset: number) {
-    const { data, error } = await supabase
+  async listMatches(limit: number, offset: number, state?: string) {
+    const query = supabase
       .from('roommate_profiles')
       .select(PROFILE_SELECT)
       .eq('is_active', true)
       .in('status', ['new', 'rematch']);
+
+    if (state) {
+      query.ilike('state', state);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw new HttpError(500, `Failed to fetch profiles for matching: ${error.message}`);
