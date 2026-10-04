@@ -8,7 +8,8 @@ export const getMatches = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     const limit = Number(req.query.limit ?? 20);
     const offset = Number(req.query.offset ?? 0);
-    const { pairs, total } = await matchService.listMatches(limit, offset);
+    const state = typeof req.query.state === 'string' ? req.query.state : undefined;
+    const { pairs, total } = await matchService.listMatches(limit, offset, state);
     res.status(200).json({
       success: true,
       message: 'Matches retrieved successfully',
