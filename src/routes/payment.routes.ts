@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
+import { requireSuperAdmin } from '../middleware/requireSuperAdmin.js';
 import {
   createPaymentLinkSchema,
   getTransactionsSchema,
@@ -55,20 +56,21 @@ router.get('/summary', getPaymentSummary);
 router.get('/transactions', validate(getTransactionsSchema), getPaymentTransactions);
 router.post('/withdrawals', validate(requestWithdrawalSchema), requestWithdrawal);
 
-// Admin only: approve (fires the Paystack transfer) or reject a pending
+// Super admin only: approve (fires the Paystack transfer) or reject a pending
 // ambassador withdrawal.
 router.patch(
   '/withdrawals/:id/confirm',
-  requireAdmin,
+  requireSuperAdmin,
   validate(confirmWithdrawalSchema),
   confirmWithdrawal,
 );
 
-// Admin only: reject a pending ambassador withdrawal, recording the reason and
-// refunding the ambassador's locked balance. No Paystack transfer is fired.
+// Super admin only: reject a pending ambassador withdrawal, recording the
+// reason and refunding the ambassador's locked balance. No Paystack transfer
+// is fired.
 router.patch(
   '/withdrawals/:id/reject',
-  requireAdmin,
+  requireSuperAdmin,
   validate(rejectWithdrawalSchema),
   rejectWithdrawal,
 );
