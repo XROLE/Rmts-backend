@@ -417,6 +417,103 @@ export class EmailService {
     });
   }
 
+  /**
+   * Notifies an ambassador of the outcome of a withdrawal request (paid/
+   * approved, failed, or rejected). Best-effort and fire-and-forget.
+   */
+  async sendWithdrawalDecision(payload: {
+    to: string;
+    status: 'paid' | 'failed' | 'rejected';
+    amountNg: number;
+    reason?: string | null;
+  }): Promise<void> {
+    const amount = `NGN ${Number(payload.amountNg).toLocaleString('en-NG', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
+    const outcome =
+      payload.status === 'paid'
+        ? {
+            title: 'Withdrawal approved',
+            badge: 'Payment Sent',
+            heading: 'Your withdrawal has been paid',
+            body: `We have paid ${amount} to your bank account. The funds should reflect shortly.`,
+          }
+        : payload.status === 'failed'
+          ? {
+              title: 'Withdrawal failed',
+              badge: 'Payment Failed',
+              heading: 'Your withdrawal could not be paid',
+              body: `We could not pay ${amount} to your bank account. The amount has been returned to your available balance.`,
+            }
+          : {
+              title: 'Withdrawal rejected',
+              badge: 'Withdrawal Rejected',
+              heading: 'Your withdrawal request was rejected',
+              body: `Your withdrawal request for ${amount} was not approved. The amount has been returned to your available balance.`,
+            };
+
+    const reasonHtml = payload.reason
+      ? `<p style="margin:16px 0 0; font-size:14px; color:#334155;"><strong style="color:#0F172A;">Reason:</strong> ${this.escapeHtml(payload.reason)}</p>`
+      : '';
+
+    const text = [
+      payload.to,
+      '',
+      `${outcome.heading}`,
+      '',
+      outcome.body,
+      payload.reason ? `Reason: ${payload.reason}` : '',
+      '',
+      'The FairNest team',
+    ]
+      .filter((line) => line !== '')
+      .join('\n');
+
+    await this.send({
+      to: payload.to,
+      subject: outcome.title,
+      text,
+      html: `
+        <!DOCTYPE html>
+        <html lang="en"><head>
+        <meta charset="utf-8"/>
+        <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+        <title>${this.escapeHtml(outcome.title)}</title>
+        <link href="https://fonts.googleapis.com" rel="preconnect"/>
+        <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+        </head>
+        <body style="margin:0; padding:0; background-color:#F1F5F9; font-family:Plus Jakarta Sans,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F1F5F9;"><tr><td align="center" style="padding:0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; background-color:#FFFFFF; border:1px solid #E2E8F0; border-radius:16px;">
+        <tr><td height="6" style="height:6px; font-size:0; line-height:0; background-color:#080E21; background-image:linear-gradient(to right,#080E21,#0284C7,#2EB1FF);"></td></tr>
+        <tr><td style="padding:20px 20px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+        <td valign="middle">
+        <div style="width:44px; height:44px; background-color:#080E21; border-radius:12px; text-align:center; line-height:44px; font-size:24px; font-weight:800; color:#FFFFFF;">F</div>
+        </td>
+        <td valign="middle" style="padding-left:12px;"><span style="font-size:22px; font-weight:800; color:#080E21; letter-spacing:-0.02em;">FairNest<span style="color:#0284C7; font-weight:600; font-size:17px;"> Housing</span></span></td>
+        </tr>
+        <tr><td align="right" style="padding:8px 0 0;"><span style="display:inline-block; padding:4px 12px; border-radius:999px; background-color:#F0F9FF; color:#0369A1; border:1px solid #BAE6FD; font-size:12px; font-weight:600;">${this.escapeHtml(outcome.badge)}</span></td></tr>
+        </table>
+        <h1 style="margin:24px 0 12px; font-size:26px; font-weight:800; color:#080E21; line-height:1.2; letter-spacing:-0.03em;">${this.escapeHtml(outcome.heading)}</h1>
+        <p style="margin:0; font-size:15px; color:#334155; line-height:1.6;">${outcome.body}</p>
+        ${reasonHtml}
+        <hr style="margin:20px 0; border:none; border-top:2px solid #F1F5F9;"/>
+        <div style="font-size:13px; color:#64748B; line-height:1.6;">
+        This message was mailed to <span style="color:#475569; font-family:Consolas,Menlo,monospace; font-weight:500;">${this.escapeHtml(payload.to)}</span> by FairNest Housing in relation to your ambassador account.
+        </div>
+        </td></tr>
+        </table>
+        </td></tr></table>
+        </body></html>
+      `,
+    });
+  }
+
   private escapeHtml(value: string): string {
     return value
       .replace(/&/g, '&amp;')

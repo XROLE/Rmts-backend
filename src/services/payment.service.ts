@@ -4,6 +4,7 @@ import { supabase } from '../config/supabase.js';
 import { paystackService } from './paystack.service.js';
 import { matchService } from './match.service.js';
 import { whatsappLifecycleService } from './whatsappLifecycle.service.js';
+import { emailService } from './email.service.js';
 import type {
   ConfirmWithdrawalInput,
   CreatePaymentLinkInput,
@@ -189,7 +190,9 @@ export class PaymentService {
 
   /**
    * Processes a Paystack webhook event. Flips a pending commission to paid
-   * on a successful charge. Idempotent on the Paystack reference.
+   * on a successful charge. Idempotent on the Paystack reference. Also
+   * reconciles transfer.success / transfer.failed events against withdrawals
+   * so statuses stay in sync without waiting for an admin retry.
    */
   async handleWebhookEvent(rawBody: string, signature: string | undefined) {
     if (!paystackService.verifyWebhookSignature(rawBody, signature)) {
@@ -197,6 +200,19 @@ export class PaymentService {
     }
 
     const event = JSON.parse(rawBody);
+
+    if (event?.event === 'transfer.success' || event?.event === 'transfer.failed') {
+      const transferCode = event?.data?.transfer_code;
+      if (!transferCode) {
+        console.log('[webhook] missing transfer_code in transfer event');
+        return { handled: false };
+      }
+      return this.syncWithdrawalFromTransfer(
+        transferCode,
+        event.event === 'transfer.success' ? 'paid' : 'failed',
+      );
+    }
+
     if (event?.event !== 'charge.success') {
       console.log('[webhook] ignored non-charge-success event:', event?.event);
       return { handled: false };
@@ -209,6 +225,62 @@ export class PaymentService {
     }
 
     return this.creditCommissionForReference(reference);
+  }
+
+  /**
+   * Reconciles a withdrawal against a Paystack transfer status event.
+   * Matches by paystack_transfer_code (falling back to the withdrawal
+   * reference). Idempotent: only pending/processing withdrawals are touched,
+   * and failed transfers refund the ambassador's locked balance.
+   */
+  async syncWithdrawalFromTransfer(
+    transferCode: string,
+    status: 'paid' | 'failed',
+  ): Promise<{ handled: boolean; duplicate?: boolean; withdrawal?: unknown }> {
+    const { data: withdrawal, error } = await supabase
+      .from('withdrawals')
+      .select('*')
+      .or(`paystack_transfer_code.eq.${transferCode},reference.eq.${transferCode}`)
+      .maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to look up withdrawal: ${error.message}`);
+    }
+
+    if (!withdrawal) {
+      console.log('[webhook] no withdrawal for transfer_code:', transferCode);
+      return { handled: false };
+    }
+
+    if (!['pending', 'processing'].includes(withdrawal.status)) {
+      console.log('[webhook] withdrawal already resolved:', withdrawal.status);
+      return { handled: true, duplicate: true };
+    }
+
+    const newStatus = status === 'paid' ? 'paid' : 'failed';
+
+    const { data: updated, error: updateError } = await supabase
+      .from('withdrawals')
+      .update({ status: newStatus, processed_at: new Date().toISOString() })
+      .eq('id', withdrawal.id)
+      .in('status', ['pending', 'processing'])
+      .select('*')
+      .single();
+
+    if (updateError || !updated) {
+      throw new HttpError(
+        500,
+        `Failed to sync withdrawal status: ${updateError?.message ?? 'unknown error'}`,
+      );
+    }
+
+    if (status === 'failed') {
+      await this.refundWithdrawalBalance(withdrawal);
+    }
+
+    await this.notifyWithdrawalDecision(updated);
+
+    return { handled: true, withdrawal: updated };
   }
 
   /**
@@ -836,6 +908,8 @@ export class PaymentService {
         );
       }
 
+      await this.notifyWithdrawalDecision(simulated);
+
       return simulated;
     }
 
@@ -900,6 +974,8 @@ export class PaymentService {
         );
       }
 
+      await this.notifyWithdrawalDecision(paid);
+
       return paid;
     }
 
@@ -920,6 +996,9 @@ export class PaymentService {
       }
 
       await this.refundWithdrawalBalance(withdrawal);
+
+      const failedRow = failed as Record<string, unknown>;
+      await this.notifyWithdrawalDecision(failedRow, withdrawal.rejection_reason);
 
       return failed;
     }
@@ -986,6 +1065,11 @@ export class PaymentService {
 
     await this.refundWithdrawalBalance(withdrawal);
 
+    await this.notifyWithdrawalDecision(
+      rejected as Record<string, unknown>,
+      reason,
+    );
+
     return rejected;
   }
 
@@ -1024,6 +1108,46 @@ export class PaymentService {
 
     if (refundError) {
       console.error('Failed to refund balance after withdrawal failure:', refundError.message);
+    }
+  }
+
+  /**
+   * Emails the ambassador with the outcome of a withdrawal request (paid,
+   * failed, or rejected). Best-effort and fire-and-forget: a failed send or a
+   * missing user row never fails the withdrawal operation itself.
+   */
+  private async notifyWithdrawalDecision(
+    withdrawal: Record<string, unknown>,
+    reason?: string | null,
+  ) {
+    try {
+      const userId = withdrawal.ambassador_user_id as string | undefined;
+      const amountNg = Number(withdrawal.amount_ngn ?? 0);
+      const status = withdrawal.status as 'paid' | 'failed' | 'rejected';
+
+      if (!userId || !['paid', 'failed', 'rejected'].includes(status)) {
+        return;
+      }
+
+      const { data: user } = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!user?.email) {
+        console.log('[withdrawal] no user email to notify:', userId);
+        return;
+      }
+
+      await emailService.sendWithdrawalDecision({
+        to: user.email,
+        status,
+        amountNg,
+        reason: reason ?? null,
+      });
+    } catch (err) {
+      console.error('[withdrawal] failed to send decision email:', err);
     }
   }
 }
