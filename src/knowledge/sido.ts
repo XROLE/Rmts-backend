@@ -83,7 +83,7 @@ AFTER A MATCH IS ACCEPTED
 - Once payment is confirmed, the other person's name, phone and optional social handle are
   shared, along with our safety rules.
 - If things don't work out, the user can request a replacement match via the replacement form
-  (roommate.ng/request-replacement) while their match quota remains. Replacement matches are a
+  (fairnesthousing.com/request-replacement) while their match quota remains. Replacement matches are a
   courtesy, capped at operational limits — not an absolute legal right.
 
 CONFIRMED MATCH & SERVICE FEE
@@ -138,7 +138,7 @@ SAFETY & PLATFORM RESPONSIBILITY (knowledge — use the contextual tip that fits
   * Do a compatibility/vibe check: discuss daily routines, cleanliness habits, work schedules
     and visitor preferences for long-term fit.
   * If anything feels off, the user does not have to proceed. They can request a fresh match
-    anytime via the Match Request Form (roommate.ng/request-replacement) while their match
+    anytime via the Match Request Form (fairnesthousing.com/request-replacement) while their match
     quota/credits remain (the service fee covers up to seven matches).
   * Encourage reporting what went wrong — it helps us investigate and keep the community safe.
 

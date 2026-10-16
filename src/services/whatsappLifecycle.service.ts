@@ -4,6 +4,7 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { whatsappService } from './whatsapp.service.js';
 import { paystackService } from './paystack.service.js';
+import { getReplacementFormBaseUrl } from '../config/site.js';
 import { normalizePhoneToE164, normalizeAnyPhoneToE164, phoneLookupVariants } from '../utils/normalizePhone.js';
 
 const FLOW_ONBOARDING_ID = process.env.WHATSAPP_FLOW_ONBOARDING_ID ?? '';
@@ -35,8 +36,6 @@ const MATCH_PAYMENT_AMOUNT_NGN = Number(
   process.env.WHATSAPP_MATCH_PAYMENT_AMOUNT_NGN ?? 2750,
 );
 const PAYMENT_RETURN_URL = process.env.PAYMENT_RETURN_URL;
-const REPLACEMENT_FORM_BASE_URL =
-  process.env.REPLACEMENT_FORM_BASE_URL ?? 'https://roommate.ng/request-replacement';
 /** Minimum gap between automatic registration Flow sends to the same phone. */
 const REGISTRATION_RESEND_WINDOW_MS = 15 * 60 * 1000;
 
@@ -923,7 +922,7 @@ export class WhatsAppLifecycleService {
       participant.phone,
       [
         '🔁 *Re-match policy*',
-        `If things do not work out, you can request a replacement match any time via ${REPLACEMENT_FORM_BASE_URL}?phone=${participant.phone}`,
+        `If things do not work out, you can request a replacement match any time via ${getReplacementFormBaseUrl()}?phone=${participant.phone}`,
         '',
         'Please note: replacement matches are an optional courtesy capped at operational limits — they are not an absolute legal right.',
       ].join('\n'),
@@ -1396,7 +1395,7 @@ export class WhatsAppLifecycleService {
       match.user_phone,
       [
         '🔁 *Re-match policy*',
-        `If things do not work out, you can request a replacement match any time via ${REPLACEMENT_FORM_BASE_URL}?phone=${match.user_phone}`,
+        `If things do not work out, you can request a replacement match any time via ${getReplacementFormBaseUrl()}?phone=${match.user_phone}`,
         '',
         'Please note: replacement matches are an optional courtesy capped at operational limits — they are not an absolute legal right.',
       ].join('\n'),
