@@ -13,7 +13,7 @@ const OPENAI_TEMPERATURE = Number(process.env.OPENAI_TEMPERATURE ?? 0.7);
 const OPENAI_MAX_TOKENS = Number(process.env.OPENAI_MAX_TOKENS ?? 300);
 const SIDO_MAX_HISTORY = Number(process.env.SIDO_MAX_HISTORY ?? 30);
 const SIDO_REGISTRATION_URL =
-  process.env.SIDO_REGISTRATION_URL ?? 'https://urban-nest-tawny.vercel.app/';
+  process.env.SIDO_REGISTRATION_URL ?? 'https://www.fairnesthousing.com/';
 /** Base URL of the website used to build the /update-request deep link. */
 const SIDO_SITE_URL = (process.env.SIDO_SITE_URL ?? SIDO_REGISTRATION_URL).replace(
   /\/+$/,
