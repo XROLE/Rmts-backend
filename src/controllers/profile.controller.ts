@@ -4,6 +4,7 @@ import { whatsappLifecycleService } from '../services/whatsappLifecycle.service.
 import type { WelcomeProfileInput } from '../services/whatsappLifecycle.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
+import type { UpdateProfileInput } from '../schemas/profile.schema.js';
 
 /**
  * Handles the public registration + profile creation flow.
@@ -27,6 +28,29 @@ export const createProfile = asyncHandler(
     res.status(201).json({
       success: true,
       message: 'Profile created successfully',
+      data: profile,
+    });
+  },
+);
+
+/**
+ * Handles updating a roommate request by the owner's phone number.
+ *
+ * Trust model: the phone number is supplied by the Sido/WhatsApp conversation
+ * (the authenticated WhatsApp sender), not a public login. This endpoint should
+ * only be reachable from that trusted context.
+ */
+export const updateProfileByPhone = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { phoneNumber, ...updates } = req.body as UpdateProfileInput;
+    const profile = await profileService.updateByPhone(
+      phoneNumber,
+      updates as Omit<UpdateProfileInput, 'phoneNumber'>,
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Roommate request updated successfully',
       data: profile,
     });
   },

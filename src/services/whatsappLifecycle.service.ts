@@ -32,7 +32,7 @@ const REGISTRATION_OCCUPATIONS = [
 ] as const;
 const REGISTRATION_SMOKING_HABITS = ['non_smoker', 'occasional_smoker', 'regular_smoker'] as const;
 const MATCH_PAYMENT_AMOUNT_NGN = Number(
-  process.env.WHATSAPP_MATCH_PAYMENT_AMOUNT_NGN ?? 2000,
+  process.env.WHATSAPP_MATCH_PAYMENT_AMOUNT_NGN ?? 2750,
 );
 const PAYMENT_RETURN_URL = process.env.PAYMENT_RETURN_URL;
 const REPLACEMENT_FORM_BASE_URL =
@@ -69,7 +69,7 @@ const MATCH_PAYMENT_NUDGE_BEFORE_HOURS = Number(
 );
 const MATCH_PAYMENT_LINK_EXPIRY_MS = MATCH_PAYMENT_LINK_EXPIRY_HOURS * 60 * 60 * 1000;
 const MATCH_PAYMENT_NUDGE_BEFORE_MS = MATCH_PAYMENT_NUDGE_BEFORE_HOURS * 60 * 60 * 1000;
-const COMMISSION_PERCENT = Number(process.env.COMMISSION_PERCENT ?? 10);
+const COMMISSION_FEE = Number(process.env.COMMISSION_FEE ?? 500);
 
 const MATCH_FEE_PITCH_TEXT =
   'This is a one-time service charge for the matching service.\n\n' +
@@ -178,7 +178,7 @@ function naira(amountNg: number): string {
 /**
  * WhatsApp-led roommate lifecycle engine:
  *   trigger-onboarding -> proceed_decision -> ACTIVE_SEARCH / OPTED_OUT
- *   trigger-match      -> accept_match     -> ACCEPTED + Paystack ₦2,000 link
+ *   trigger-match      -> accept_match     -> ACCEPTED + Paystack ₦2,750 link
  *                          (charge.success) -> UNLOCKED + PII/safety/rematch DMs
  */
 export class WhatsAppLifecycleService {
@@ -188,7 +188,7 @@ export class WhatsAppLifecycleService {
 
   /**
    * Sends the onboarding Flow inviting the user to confirm their search and
-   * informing them of the single ₦2,000 fee policy.
+   * informing them of the single ₦2,750 fee policy.
    */
   async triggerOnboarding(input: { phone: string; name: string }) {
     if (!FLOW_ONBOARDING_ID) {
@@ -1000,7 +1000,7 @@ export class WhatsAppLifecycleService {
       return;
     }
 
-    const commission = Number(((input.amountNg * COMMISSION_PERCENT) / 100).toFixed(2));
+    const commission = COMMISSION_FEE;
 
     const { data: paymentLink, error: linkError } = await supabase
       .from('payment_links')
@@ -1316,7 +1316,7 @@ export class WhatsAppLifecycleService {
 
   /**
    * Match decision (accept_match). YES marks the match ACCEPTED and returns a
-   * CTA button with the ₦2,000 Paystack payment link. NO marks it REJECTED
+   * CTA button with the ₦2,750 Paystack payment link. NO marks it REJECTED
    * with the saved decline reason.
    */
   async handleMatchDecision(flowToken: string, responseJson: Record<string, unknown>) {
@@ -1631,7 +1631,7 @@ export class WhatsAppLifecycleService {
   }
 
   /**
-   * Marks the match ACCEPTED, initializes a ₦2,000 Paystack transaction and
+   * Marks the match ACCEPTED, initializes a ₦2,750 Paystack transaction and
    * sends the payment link as an interactive CTA URL button.
    */
   private async acceptMatchAndIssuePayment(match: MatchRow) {

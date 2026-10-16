@@ -1,5 +1,27 @@
 import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
+import type { UpdateProfileInput } from '../schemas/profile.schema.js';
+import {
+  normalizeAnyPhoneToE164,
+  phoneLookupVariants,
+} from '../utils/normalizePhone.js';
+
+/**
+ * Lifecycle states in which a request can no longer be edited by the user.
+ * Editing is blocked once a match has been found or payment is in flight, to
+ * avoid tampering with an active match. Allowed: new, reviewing, paused.
+ */
+const LOCKED_EDIT_STATUSES = [
+  'potential_match_found',
+  'waiting_approval',
+  'payment_pending',
+  'paid',
+  'connected',
+  'closed',
+] as const;
+
+const EDITABLE_SELECT =
+  'id, full_name, phone_number, gender, age_range, state, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, created_at, updated_at';
 
 export interface CreateProfilePayload {
   email: string;
@@ -68,7 +90,9 @@ export class ProfileService {
         state,
         marital_status: maritalStatus,
         religion,
-        preferred_locations: preferredLocations,
+        preferred_locations: Array.from(
+        new Set(preferredLocations.map((l) => l.trim()).filter(Boolean)),
+      ),
         budget_min: budgetMin,
         budget_max: budgetMax,
         expected_move_in_date: expectedMoveInDate,
@@ -92,6 +116,84 @@ export class ProfileService {
 
     if (ambassador) {
       await this.incrementReferralCount(ambassador);
+    }
+
+    return data;
+  }
+
+  /**
+   * Updates a roommate request identified by the owner's phone number.
+   *
+   * Ownership is established by the Sido/WhatsApp conversation: the caller
+   * supplies the profile's phone number (the trusted WhatsApp sender), which is
+   * matched against stored phone serializations. Only a limited subset of
+   * fields is editable, and editing is blocked once a match/payment is in
+   * flight. Returns the updated profile, or throws 404/409/400 as appropriate.
+   */
+  async updateByPhone(
+    phoneNumber: string,
+    updates: Omit<UpdateProfileInput, 'phoneNumber'>,
+  ) {
+    const normalized =
+      normalizeAnyPhoneToE164(phoneNumber) ?? phoneNumber;
+    const variants = phoneLookupVariants(normalized);
+
+    const { data: profile, error: findError } = await supabase
+      .from('roommate_profiles')
+      .select('id, status, budget_min, budget_max')
+      .in('phone_number', variants)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (findError) {
+      throw new HttpError(500, `Failed to find profile: ${findError.message}`);
+    }
+    if (!profile) {
+      throw new HttpError(404, 'No roommate request found for this phone number');
+    }
+    if (LOCKED_EDIT_STATUSES.includes(profile.status as never)) {
+      throw new HttpError(
+        409,
+        'This request can no longer be edited because a match has been initiated',
+      );
+    }
+
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (updates.preferredLocations) {
+      patch.preferred_locations = Array.from(
+        new Set(updates.preferredLocations.map((l) => l.trim()).filter(Boolean)),
+      );
+    }
+    if (updates.budgetMin !== undefined) patch.budget_min = updates.budgetMin;
+    if (updates.budgetMax !== undefined) patch.budget_max = updates.budgetMax;
+    if (updates.expectedMoveInDate) {
+      patch.expected_move_in_date = updates.expectedMoveInDate;
+    }
+
+    const mergedMin =
+      patch.budget_min ?? (profile.budget_min as number | null) ?? 0;
+    const mergedMax =
+      patch.budget_max ?? (profile.budget_max as number | null) ?? 0;
+    if (mergedMax < mergedMin) {
+      throw new HttpError(
+        400,
+        'budgetMax must be greater than or equal to budgetMin',
+      );
+    }
+
+    const { data, error: updateError } = await supabase
+      .from('roommate_profiles')
+      .update(patch)
+      .eq('id', profile.id)
+      .select(EDITABLE_SELECT)
+      .single();
+
+    if (updateError) {
+      throw new HttpError(500, `Failed to update profile: ${updateError.message}`);
     }
 
     return data;

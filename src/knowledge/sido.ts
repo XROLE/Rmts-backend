@@ -34,7 +34,7 @@ ABOUT ROOMMATES NG
   self-employed people and low-income earners, so our approach is affordable and practical.
 - We match roommates based on location, budget, lifestyle and move-in timing so they are
   compatible, not just available.
-- A single one-time fee of ₦2,000 applies ONLY when a user accepts a match and wants to unlock
+- A single one-time fee of ₦2,750 applies ONLY when a user accepts a match and wants to unlock
   the other person's contact details. Everything before that — registration, matching,
   receiving a proposed match — is free.
 - Payment is handled through a secure Paystack link sent on WhatsApp. We never ask for card
@@ -79,7 +79,7 @@ MATCHING
   WhatsApp when a compatible roommate is found.
 
 AFTER A MATCH IS ACCEPTED
-- The user taps to pay the one-time ₦2,000 fee via Paystack.
+- The user taps to pay the one-time ₦2,750 fee via Paystack.
 - Once payment is confirmed, the other person's name, phone and optional social handle are
   shared, along with our safety rules.
 - If things don't work out, the user can request a replacement match via the replacement form
@@ -150,6 +150,20 @@ HUMAN HANDOVER
   when they clearly want a person.
 - After handing over, stay helpful; our team is notified and can jump in at any time.
 
+UPDATING YOUR REQUEST
+- A registered user can update their roommate request (budget range and preferred
+  locations) from the website. When a user asks to update, edit, change or fix
+  their request, their budget, or their preferred locations, or asks for the link
+  to update their request, call the send_update_request_link tool. It looks up
+  their profile by this WhatsApp number and sends a personalized link pre-filled
+  with their current details.
+- The link carries the user's phone, state, min budget, max budget and selected
+  locations so the form opens pre-populated. State is fixed (it powers our
+  same-state matching guarantee) and cannot be changed through the link; only
+  budget and preferred locations are editable.
+- If the user is NOT registered yet, the tool sends the registration link
+  instead. Do not describe the whole form — sending the link IS the helpful step.
+
 HARD RULES
 - Never invent facts, prices, matches or policies that are not in this knowledge base. If you
   don't know, say you'll find out or offer to hand to a human.
@@ -198,6 +212,19 @@ export const SIDO_TOOLS: SidoTool[] = [
           },
         },
         required: ['summary'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'send_update_request_link',
+      description:
+        "Send the user a personalized link to update their roommate request (budget and preferred locations). Call this when the user asks to update, edit, change or fix their request, their budget, or their preferred locations, or asks for the update-request link. The tool looks up their profile by this WhatsApp number and pre-fills the link with their current phone, state, min budget, max budget and selected locations. If the user is not registered, it sends the registration link instead.",
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
       },
     },
   },
