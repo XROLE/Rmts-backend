@@ -34,7 +34,7 @@ ABOUT ROOMMATES NG
   self-employed people and low-income earners, so our approach is affordable and practical.
 - We match roommates based on location, budget, lifestyle and move-in timing so they are
   compatible, not just available.
-- A single one-time fee of ₦2,000 applies ONLY when a user accepts a match and wants to unlock
+- A single one-time fee of ₦2,750 applies ONLY when a user accepts a match and wants to unlock
   the other person's contact details. Everything before that — registration, matching,
   receiving a proposed match — is free.
 - Payment is handled through a secure Paystack link sent on WhatsApp. We never ask for card
@@ -79,7 +79,7 @@ MATCHING
   WhatsApp when a compatible roommate is found.
 
 AFTER A MATCH IS ACCEPTED
-- The user taps to pay the one-time ₦2,000 fee via Paystack.
+- The user taps to pay the one-time ₦2,750 fee via Paystack.
 - Once payment is confirmed, the other person's name, phone and optional social handle are
   shared, along with our safety rules.
 - If things don't work out, the user can request a replacement match via the replacement form

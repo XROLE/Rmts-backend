@@ -12,14 +12,14 @@ import type {
   RequestWithdrawalInput,
 } from '../schemas/payment.schema.js';
 
-const COMMISSION_PERCENT = Number(process.env.COMMISSION_PERCENT ?? 10);
+const COMMISSION_FEE = Number(process.env.COMMISSION_FEE ?? 500);
 const MIN_WITHDRAWAL_AMOUNT = Number(process.env.MIN_WITHDRAWAL_AMOUNT ?? 1000);
 const MAX_WITHDRAWAL_AMOUNT = Number(process.env.MAX_WITHDRAWAL_AMOUNT ?? 5000);
 const PAYMENT_RETURN_URL = process.env.PAYMENT_RETURN_URL;
 const SIMULATE_TRANSFERS = process.env.SIMULATE_PAYSTACK_TRANSFERS === 'true';
 
-function commissionFor(amountNg: number): number {
-  return Number(((amountNg * COMMISSION_PERCENT) / 100).toFixed(2));
+function commissionFee(): number {
+  return COMMISSION_FEE;
 }
 
 function nairaToKobo(amountNg: number): number {
@@ -119,7 +119,7 @@ export class PaymentService {
       throw new HttpError(500, `Failed to store payment link: ${linkError?.message}`);
     }
 
-    const commission = commissionFor(amountNg);
+    const commission = commissionFee();
 
     const { data: commissionRecord, error: commissionError } = await supabase
       .from('commission_earnings')
@@ -490,7 +490,7 @@ export class PaymentService {
       availableBalance,
       totalWithdrawn,
       successfulPayments: paidRes.data?.length ?? 0,
-      commissionPercent: COMMISSION_PERCENT,
+      commissionFee: COMMISSION_FEE,
     };
   }
 
