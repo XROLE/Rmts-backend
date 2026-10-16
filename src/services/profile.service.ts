@@ -68,7 +68,9 @@ export class ProfileService {
         state,
         marital_status: maritalStatus,
         religion,
-        preferred_locations: preferredLocations,
+        preferred_locations: Array.from(
+        new Set(preferredLocations.map((l) => l.trim()).filter(Boolean)),
+      ),
         budget_min: budgetMin,
         budget_max: budgetMax,
         expected_move_in_date: expectedMoveInDate,

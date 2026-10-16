@@ -36,8 +36,20 @@ export const createProfileSchema = z.object({
     religion: z.string().max(50).optional(),
 
     preferredLocations: z
-      .array(z.string().min(1).max(100))
-      .min(1, 'At least one preferred location is required'),
+      .array(z.string().max(100, 'Each preferred location must be 100 characters or fewer'))
+      .min(1, 'At least one preferred location is required')
+      .max(3, 'You can add up to 3 preferred locations')
+      .refine(
+        (locs) => locs.some((l) => l.trim().length > 0),
+        { message: 'At least one preferred location is required' },
+      )
+      .refine(
+        (locs) => {
+          const cleaned = locs.map((l) => l.trim().toLowerCase()).filter(Boolean);
+          return new Set(cleaned).size === cleaned.length;
+        },
+        { message: 'Preferred locations must be different areas' },
+      ),
 
     budgetMin: z.number().min(0).default(0),
     budgetMax: z.number().min(0),
