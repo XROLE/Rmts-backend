@@ -5,6 +5,7 @@ import { whatsappService } from './whatsapp.service.js';
 import { emailService } from './email.service.js';
 import { SIDO_SYSTEM_PROMPT, SIDO_TOOLS } from '../knowledge/sido.js';
 import { phoneLookupVariants } from '../utils/normalizePhone.js';
+import { getSiteBaseUrl } from '../config/site.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
@@ -12,13 +13,6 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
 const OPENAI_TEMPERATURE = Number(process.env.OPENAI_TEMPERATURE ?? 0.7);
 const OPENAI_MAX_TOKENS = Number(process.env.OPENAI_MAX_TOKENS ?? 300);
 const SIDO_MAX_HISTORY = Number(process.env.SIDO_MAX_HISTORY ?? 30);
-const SIDO_REGISTRATION_URL =
-  process.env.SIDO_REGISTRATION_URL ?? 'https://www.fairnesthousing.com/';
-/** Base URL of the website used to build the /update-request deep link. */
-const SIDO_SITE_URL = (process.env.SIDO_SITE_URL ?? SIDO_REGISTRATION_URL).replace(
-  /\/+$/,
-  '',
-);
 /** Randomized composing delay before Sido's reply lands (ms) — simulates typing. */
 const SIDO_REPLY_DELAY_MIN_MS = Number(process.env.SIDO_REPLY_DELAY_MIN_MS ?? 800);
 const SIDO_REPLY_DELAY_MAX_MS = Number(process.env.SIDO_REPLY_DELAY_MAX_MS ?? 1800);
@@ -271,7 +265,7 @@ ${status}`;
     await whatsappService.sendCtaUrlButton({
       to: phoneE164,
       displayText: 'Create your profile',
-      url: SIDO_REGISTRATION_URL,
+      url: `${getSiteBaseUrl()}/`,
       header: 'Create your profile 🏠',
       body: 'Set up your Roommates NG profile on the website — it takes under 2 minutes.',
     });
@@ -303,7 +297,7 @@ ${status}`;
     params.set('maxBudget', String(profile.budget_max));
     params.set('locations', (profile.preferred_locations ?? []).join(','));
 
-    const url = `${SIDO_SITE_URL}/update-request?${params.toString()}`;
+    const url = `${getSiteBaseUrl()}/update-request?${params.toString()}`;
 
     try {
       await whatsappService.sendText(
