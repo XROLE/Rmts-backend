@@ -14,6 +14,11 @@ const OPENAI_MAX_TOKENS = Number(process.env.OPENAI_MAX_TOKENS ?? 300);
 const SIDO_MAX_HISTORY = Number(process.env.SIDO_MAX_HISTORY ?? 30);
 const SIDO_REGISTRATION_URL =
   process.env.SIDO_REGISTRATION_URL ?? 'https://urban-nest-tawny.vercel.app/';
+/** Base URL of the website used to build the /update-request deep link. */
+const SIDO_SITE_URL = (process.env.SIDO_SITE_URL ?? SIDO_REGISTRATION_URL).replace(
+  /\/+$/,
+  '',
+);
 /** Randomized composing delay before Sido's reply lands (ms) — simulates typing. */
 const SIDO_REPLY_DELAY_MIN_MS = Number(process.env.SIDO_REPLY_DELAY_MIN_MS ?? 800);
 const SIDO_REPLY_DELAY_MAX_MS = Number(process.env.SIDO_REPLY_DELAY_MAX_MS ?? 1800);
@@ -210,18 +215,16 @@ ${status}`;
   ): Promise<string> {
     if (toolName === 'send_registration_invite') {
       try {
-        await whatsappService.sendCtaUrlButton({
-          to: phoneE164,
-          displayText: 'Create your profile',
-          url: SIDO_REGISTRATION_URL,
-          header: 'Create your profile 🏠',
-          body: 'Set up your Roommates NG profile on the website — it takes under 2 minutes.',
-        });
+        await this.sendRegistrationInvite(phoneE164);
         return "I've sent you the link to create your profile 👆 Tap 'Create your profile' to get started 😊";
       } catch (err) {
         console.error('[sido] failed to send registration link:', err);
         return "Sorry, I couldn't send the registration link just now 🙈 Please try again in a moment, or type 'talk to human' if you'd like a person to help you.";
       }
+    }
+
+    if (toolName === 'send_update_request_link') {
+      return this.sendUpdateRequestLink(phoneE164);
     }
 
     if (toolName === 'request_human_handover') {
@@ -261,6 +264,95 @@ ${status}`;
     emailService
       .sendHumanHandover({ phone: phoneE164, name: name || 'Unknown', summary })
       .catch((err) => console.error('[sido] failed to email handover:', err));
+  }
+
+  /** Sends the "Create your profile" CTA button pointing at the website. */
+  private async sendRegistrationInvite(phoneE164: string): Promise<void> {
+    await whatsappService.sendCtaUrlButton({
+      to: phoneE164,
+      displayText: 'Create your profile',
+      url: SIDO_REGISTRATION_URL,
+      header: 'Create your profile 🏠',
+      body: 'Set up your Roommates NG profile on the website — it takes under 2 minutes.',
+    });
+  }
+
+  /**
+   * Builds a personalized /update-request deep link for the requesting user
+   * and sends it as a clickable text message. The profile is looked up by the
+   * WhatsApp sender's phone number; the link is pre-filled with the user's
+   * stored phone, state, budget range and preferred locations so the form can
+   * be pre-populated on the website.
+   */
+  private async sendUpdateRequestLink(phoneE164: string): Promise<string> {
+    const profile = await this.findProfileForUpdateLink(phoneE164);
+
+    if (!profile) {
+      try {
+        await this.sendRegistrationInvite(phoneE164);
+      } catch (err) {
+        console.error('[sido] failed to send registration link:', err);
+      }
+      return "I couldn't find an active roommate request on this number, so I've sent you the registration link instead 👆 Once you're registered, just message me and I'll get you the update link 😊";
+    }
+
+    const params = new URLSearchParams();
+    params.set('phone', profile.phone_number);
+    params.set('state', profile.state);
+    params.set('minBudget', String(profile.budget_min));
+    params.set('maxBudget', String(profile.budget_max));
+    params.set('locations', (profile.preferred_locations ?? []).join(','));
+
+    const url = `${SIDO_SITE_URL}/update-request?${params.toString()}`;
+
+    try {
+      await whatsappService.sendText(
+        phoneE164,
+        `Here's your link to update your roommate request 🔗\n${url}\n\nYou can adjust your budget and preferred locations there. Your state (${profile.state}) stays fixed for same-state matching.`,
+      );
+    } catch (err) {
+      console.error('[sido] failed to send update-request link:', err);
+      return "Sorry, I couldn't send the update link just now 🙈 Please try again in a moment, or type 'talk to human' if you'd like a person to help you.";
+    }
+
+    return "I've sent your update link above 👆 Tap it to edit your budget and preferred locations 😊";
+  }
+
+  /**
+   * Looks up the fields needed to build the update-request link for a phone
+   * number. Returns null when no roommate profile exists for the number.
+   */
+  private async findProfileForUpdateLink(
+    phoneE164: string,
+  ): Promise<{
+    phone_number: string;
+    state: string;
+    budget_min: number;
+    budget_max: number;
+    preferred_locations: string[] | null;
+  } | null> {
+    const variants = phoneLookupVariants(phoneE164);
+
+    const { data, error } = await supabase
+      .from('roommate_profiles')
+      .select('phone_number, state, budget_min, budget_max, preferred_locations')
+      .in('phone_number', variants)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to look up profile: ${error.message}`);
+    }
+    return (data as
+      | {
+          phone_number: string;
+          state: string;
+          budget_min: number;
+          budget_max: number;
+          preferred_locations: string[] | null;
+        }
+      | null) ?? null;
   }
 
   // ---------------------------------------------------------------
