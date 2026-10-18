@@ -431,6 +431,200 @@ ${status}`;
     }
     return (data as { id: string } | null) ?? null;
   }
+
+  // ---------------------------------------------------------------
+  // Admin: read-only exports for the Sido chat viewer
+  // ---------------------------------------------------------------
+
+  /**
+   * Lists every Sido conversation (one per WhatsApp phone) with enough metadata
+   * to render a chat-list UI. Message counts and the first/last timestamps are
+   * derived from the visible turns only (user + assistant), and each
+   * conversation is best-effort enriched with the seeker's profile name/state.
+   */
+  async listConversations(opts: { limit?: number; offset?: number } = {}): Promise<
+    Array<{
+      phone: string;
+      name: string | null;
+      state: string | null;
+      handedOff: boolean;
+      messageCount: number;
+      firstMessageAt: string | null;
+      lastMessageAt: string | null;
+    }>
+  > {
+    const limit = clamp(opts.limit ?? 50, 1, 200);
+    const offset = Math.max(0, opts.offset ?? 0);
+
+    const { data: conversations, error: convError } = await supabase
+      .from('sido_conversations')
+      .select('phone, handed_off, last_message_at, created_at')
+      .order('last_message_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (convError) {
+      throw new HttpError(500, `Failed to list conversations: ${convError.message}`);
+    }
+
+    const rows = (conversations ?? []) as Array<{
+      phone: string;
+      handed_off: boolean;
+      last_message_at: string;
+      created_at: string;
+    }>;
+
+    if (rows.length === 0) {
+      return [];
+    }
+
+    // Aggregate visible-turn stats (user + assistant) for the listed phones in
+    // a single query, then group in memory.
+    const phones = rows.map((r) => r.phone);
+    const { data: messages, error: msgError } = await supabase
+      .from('sido_messages')
+      .select('phone, role, created_at')
+      .in('phone', phones)
+      .in('role', ['user', 'assistant'])
+      .order('created_at', { ascending: true });
+
+    if (msgError) {
+      throw new HttpError(500, `Failed to load conversation stats: ${msgError.message}`);
+    }
+
+    const stats = new Map<
+      string,
+      { messageCount: number; firstMessageAt: string | null; lastMessageAt: string | null }
+    >();
+    for (const m of messages ?? []) {
+      const entry = stats.get(m.phone) ?? {
+        messageCount: 0,
+        firstMessageAt: null,
+        lastMessageAt: null,
+      };
+      entry.messageCount += 1;
+      entry.firstMessageAt = entry.firstMessageAt ?? m.created_at;
+      entry.lastMessageAt = m.created_at;
+      stats.set(m.phone, entry);
+    }
+
+    // Best-effort enrichment from roommate_profiles (name/state by phone).
+    const allVariants = phones.flatMap((p) => phoneLookupVariants(p));
+    const { data: profiles, error: profileError } = await supabase
+      .from('roommate_profiles')
+      .select('phone_number, full_name, state')
+      .in('phone_number', allVariants);
+
+    if (profileError) {
+      throw new HttpError(500, `Failed to look up profiles: ${profileError.message}`);
+    }
+
+    const profileByPhone = new Map<string, { name: string; state: string | null }>();
+    const variantToPhone = new Map<string, string>();
+    for (const p of phones) {
+      for (const v of phoneLookupVariants(p)) variantToPhone.set(v, p);
+    }
+    for (const profile of profiles ?? []) {
+      const phone = variantToPhone.get(profile.phone_number);
+      if (phone && !profileByPhone.has(phone)) {
+        profileByPhone.set(phone, {
+          name: profile.full_name,
+          state: (profile.state as string | null) ?? null,
+        });
+      }
+    }
+
+    return rows.map((r) => {
+      const stat = stats.get(r.phone);
+      const profile = profileByPhone.get(r.phone);
+      return {
+        phone: r.phone,
+        name: profile?.name ?? null,
+        state: profile?.state ?? null,
+        handedOff: r.handed_off,
+        messageCount: stat?.messageCount ?? 0,
+        firstMessageAt: stat?.firstMessageAt ?? r.created_at,
+        lastMessageAt: stat?.lastMessageAt ?? r.last_message_at,
+      };
+    });
+  }
+
+  /**
+   * Returns the visible (user + assistant) messages for a single Sido
+   * conversation in chronological order, ready to render as a chat thread.
+   */
+  async getConversationMessages(
+    phoneE164: string,
+    opts: { limit?: number } = {},
+  ): Promise<{
+    phone: string;
+    name: string | null;
+    state: string | null;
+    handedOff: boolean;
+    messages: Array<{ id: string; role: string; content: string; createdAt: string }>;
+  }> {
+    const limit = clamp(opts.limit ?? 200, 1, 1000);
+
+    const { data: conversation, error: convError } = await supabase
+      .from('sido_conversations')
+      .select('phone, handed_off')
+      .eq('phone', phoneE164)
+      .maybeSingle();
+
+    if (convError) {
+      throw new HttpError(500, `Failed to load conversation: ${convError.message}`);
+    }
+    if (!conversation) {
+      throw new HttpError(404, 'No Sido conversation found for this phone number');
+    }
+
+    const { data: messages, error: msgError } = await supabase
+      .from('sido_messages')
+      .select('id, role, content, created_at')
+      .eq('phone', phoneE164)
+      .in('role', ['user', 'assistant'])
+      .order('created_at', { ascending: true })
+      .limit(limit);
+
+    if (msgError) {
+      throw new HttpError(500, `Failed to load messages: ${msgError.message}`);
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('roommate_profiles')
+      .select('full_name, state')
+      .in('phone_number', phoneLookupVariants(phoneE164))
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (profileError) {
+      throw new HttpError(500, `Failed to look up profile: ${profileError.message}`);
+    }
+
+    return {
+      phone: phoneE164,
+      name: (profile?.full_name as string | undefined) ?? null,
+      state: (profile?.state as string | null) ?? null,
+      handedOff: (conversation as { handed_off: boolean }).handed_off,
+      messages: ((messages ?? []) as Array<{
+        id: string;
+        role: string;
+        content: string;
+        created_at: string;
+      }>).map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        createdAt: m.created_at,
+      })),
+    };
+  }
+}
+
+/** Clamps a number between min and max, ignoring non-finite values. */
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return max;
+  return Math.min(max, Math.max(min, Math.floor(value)));
 }
 
 export const sidoBotService = new SidoBotService();
