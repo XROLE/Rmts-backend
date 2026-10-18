@@ -366,3 +366,43 @@ export async function listBotConversations(req: Request, res: Response) {
 
   res.status(200).json({ success: true, data: data ?? [] });
 }
+
+/**
+ * GET /bot/chats — admin. Lists every Sido <-> roommate-seeker conversation
+ * with metadata (name/state when known, message count, first/last activity)
+ * so the admin frontend can render a chat-list view.
+ */
+export async function listSidoChats(req: Request, res: Response) {
+  const query = req.query as { limit?: string; offset?: string };
+  const limit = query.limit ? Number(query.limit) : undefined;
+  const offset = query.offset ? Number(query.offset) : undefined;
+
+  const data = await sidoBotService.listConversations({
+    limit: Number.isFinite(limit) ? limit : undefined,
+    offset: Number.isFinite(offset) ? offset : undefined,
+  });
+
+  res.status(200).json({ success: true, data });
+}
+
+/**
+ * GET /bot/chats/:phone/messages — admin. Returns the visible (user +
+ * assistant) messages for a single Sido conversation in chronological order,
+ * ready to render as a chat thread in the frontend.
+ */
+export async function getSidoChatMessages(req: Request, res: Response) {
+  const rawPhone = String(req.params.phone ?? '');
+  const phoneE164 = normalizeAnyPhoneToE164(rawPhone);
+  if (!phoneE164) {
+    throw new HttpError(400, 'A valid phone number is required');
+  }
+
+  const query = req.query as { limit?: string };
+  const limit = query.limit ? Number(query.limit) : undefined;
+
+  const data = await sidoBotService.getConversationMessages(phoneE164, {
+    limit: Number.isFinite(limit) ? limit : undefined,
+  });
+
+  res.status(200).json({ success: true, data });
+}

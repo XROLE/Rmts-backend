@@ -17,6 +17,8 @@ import {
   triggerRegistration,
   resumeBot,
   listBotConversations,
+  listSidoChats,
+  getSidoChatMessages,
 } from '../controllers/whatsapp.controller.js';
 
 const router = Router();
@@ -54,5 +56,9 @@ router.post(
 // Sido bot administration (admin only): answer/resume human handovers.
 router.post('/bot/resume', requireAdmin, validate(resumeBotSchema), resumeBot);
 router.get('/bot/conversations', requireAdmin, listBotConversations);
+
+// Sido chat viewer (admin only): browse and read Sido <-> seeker transcripts.
+router.get('/bot/chats', requireAdmin, listSidoChats);
+router.get('/bot/chats/:phone/messages', requireAdmin, getSidoChatMessages);
 
 export default router;
