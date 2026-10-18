@@ -373,13 +373,12 @@ export async function listBotConversations(req: Request, res: Response) {
  * so the admin frontend can render a chat-list view.
  */
 export async function listSidoChats(req: Request, res: Response) {
-  const query = req.query as { limit?: string; offset?: string };
+  const query = req.query as { limit?: string; cursor?: string };
   const limit = query.limit ? Number(query.limit) : undefined;
-  const offset = query.offset ? Number(query.offset) : undefined;
 
   const data = await sidoBotService.listConversations({
     limit: Number.isFinite(limit) ? limit : undefined,
-    offset: Number.isFinite(offset) ? offset : undefined,
+    cursor: query.cursor || undefined,
   });
 
   res.status(200).json({ success: true, data });
@@ -397,11 +396,12 @@ export async function getSidoChatMessages(req: Request, res: Response) {
     throw new HttpError(400, 'A valid phone number is required');
   }
 
-  const query = req.query as { limit?: string };
+  const query = req.query as { limit?: string; cursor?: string };
   const limit = query.limit ? Number(query.limit) : undefined;
 
   const data = await sidoBotService.getConversationMessages(phoneE164, {
     limit: Number.isFinite(limit) ? limit : undefined,
+    cursor: query.cursor || undefined,
   });
 
   res.status(200).json({ success: true, data });

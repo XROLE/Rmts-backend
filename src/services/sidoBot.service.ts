@@ -441,9 +441,15 @@ ${status}`;
    * to render a chat-list UI. Message counts and the first/last timestamps are
    * derived from the visible turns only (user + assistant), and each
    * conversation is best-effort enriched with the seeker's profile name/state.
+   *
+   * Returns keyset-paginated results: pass the `nextCursor` from a previous
+   * call back as `cursor` to fetch the following page. `nextCursor` is null
+   * once the final page has been returned.
    */
-  async listConversations(opts: { limit?: number; offset?: number } = {}): Promise<
-    Array<{
+  async listConversations(
+    opts: { limit?: number; cursor?: string } = {},
+  ): Promise<{
+    items: Array<{
       phone: string;
       name: string | null;
       state: string | null;
@@ -451,30 +457,45 @@ ${status}`;
       messageCount: number;
       firstMessageAt: string | null;
       lastMessageAt: string | null;
-    }>
-  > {
+    }>;
+    nextCursor: string | null;
+  }> {
     const limit = clamp(opts.limit ?? 50, 1, 200);
-    const offset = Math.max(0, opts.offset ?? 0);
+    const pageSize = limit + 1; // over-fetch one row to detect hasMore
+    const decoded = decodeCursor<{ ts: string; phone: string }>(opts.cursor);
 
-    const { data: conversations, error: convError } = await supabase
+    let query = supabase
       .from('sido_conversations')
       .select('phone, handed_off, last_message_at, created_at')
       .order('last_message_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+      .order('phone', { ascending: false })
+      .limit(pageSize);
+
+    // Keyset: rows strictly "older" than the cursor in (last_message_at, phone).
+    if (decoded?.ts && decoded?.phone) {
+      query = query.or(
+        `last_message_at.lt.${decoded.ts},and(last_message_at.eq.${decoded.ts},phone.lt.${decoded.phone})`,
+      );
+    }
+
+    const { data: conversations, error: convError } = await query;
 
     if (convError) {
       throw new HttpError(500, `Failed to list conversations: ${convError.message}`);
     }
 
-    const rows = (conversations ?? []) as Array<{
+    let rows = (conversations ?? []) as Array<{
       phone: string;
       handed_off: boolean;
       last_message_at: string;
       created_at: string;
     }>;
 
+    const hasMore = rows.length > limit;
+    if (hasMore) rows = rows.slice(0, limit);
+
     if (rows.length === 0) {
-      return [];
+      return { items: [], nextCursor: null };
     }
 
     // Aggregate visible-turn stats (user + assistant) for the listed phones in
@@ -533,7 +554,7 @@ ${status}`;
       }
     }
 
-    return rows.map((r) => {
+    const items = rows.map((r) => {
       const stat = stats.get(r.phone);
       const profile = profileByPhone.get(r.phone);
       return {
@@ -546,23 +567,40 @@ ${status}`;
         lastMessageAt: stat?.lastMessageAt ?? r.last_message_at,
       };
     });
+
+    const last = rows[rows.length - 1];
+    const nextCursor = hasMore
+      ? encodeCursor({ ts: last.last_message_at, phone: last.phone })
+      : null;
+
+    return { items, nextCursor };
   }
 
   /**
    * Returns the visible (user + assistant) messages for a single Sido
-   * conversation in chronological order, ready to render as a chat thread.
+   * conversation, ready to render as a chat thread.
+   *
+   * Pagination is keyset-based on (created_at, id):
+   *  - Without `cursor`: returns the newest `limit` messages (chronological
+   *    order, oldest first) so the thread opens at the bottom.
+   *  - With `cursor` (the `nextCursor` from a previous call): returns the page
+   *    of messages *older* than that cursor, for scroll-up / infinite loading.
+   * `nextCursor` is null once the oldest messages have been returned.
    */
   async getConversationMessages(
     phoneE164: string,
-    opts: { limit?: number } = {},
+    opts: { limit?: number; cursor?: string } = {},
   ): Promise<{
     phone: string;
     name: string | null;
     state: string | null;
     handedOff: boolean;
     messages: Array<{ id: string; role: string; content: string; createdAt: string }>;
+    nextCursor: string | null;
   }> {
-    const limit = clamp(opts.limit ?? 200, 1, 1000);
+    const limit = clamp(opts.limit ?? 50, 1, 1000);
+    const pageSize = limit + 1; // over-fetch one row to detect hasMore
+    const decoded = decodeCursor<{ ts: string; id: string }>(opts.cursor);
 
     const { data: conversation, error: convError } = await supabase
       .from('sido_conversations')
@@ -577,17 +615,36 @@ ${status}`;
       throw new HttpError(404, 'No Sido conversation found for this phone number');
     }
 
-    const { data: messages, error: msgError } = await supabase
-      .from('sido_messages')
-      .select('id, role, content, created_at')
-      .eq('phone', phoneE164)
-      .in('role', ['user', 'assistant'])
-      .order('created_at', { ascending: true })
-      .limit(limit);
+    const baseQuery = () =>
+      supabase
+        .from('sido_messages')
+        .select('id, role, content, created_at')
+        .eq('phone', phoneE164)
+        .in('role', ['user', 'assistant']);
 
-    if (msgError) {
-      throw new HttpError(500, `Failed to load messages: ${msgError.message}`);
+    let fetched: Array<{ id: string; role: string; content: string; created_at: string }>;
+
+    if (decoded?.ts && decoded?.id) {
+      // Older-than-cursor page: strictly before (created_at, id), oldest first.
+      const { data, error: msgError } = await baseQuery()
+        .or(`created_at.lt.${decoded.ts},and(created_at.eq.${decoded.ts},id.lt.${decoded.id})`)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(pageSize);
+      if (msgError) throw new HttpError(500, `Failed to load messages: ${msgError.message}`);
+      fetched = (data ?? []) as typeof fetched;
+    } else {
+      // Newest page: take the tail, then reverse to chronological order.
+      const { data, error: msgError } = await baseQuery()
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(pageSize);
+      if (msgError) throw new HttpError(500, `Failed to load messages: ${msgError.message}`);
+      fetched = ((data ?? []) as typeof fetched).reverse();
     }
+
+    const hasMore = fetched.length > limit;
+    if (hasMore) fetched = fetched.slice(0, limit);
 
     const { data: profile, error: profileError } = await supabase
       .from('roommate_profiles')
@@ -601,22 +658,29 @@ ${status}`;
       throw new HttpError(500, `Failed to look up profile: ${profileError.message}`);
     }
 
+    const messages = fetched.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      createdAt: m.created_at,
+    }));
+
+    // nextCursor is the oldest returned message (the boundary for the next
+    // older page). It is only set when there are actually more messages to
+    // page through (hasMore).
+    const oldest = fetched[0];
+    const nextCursor =
+      hasMore && messages.length > 0
+        ? encodeCursor({ ts: oldest.created_at, id: oldest.id })
+        : null;
+
     return {
       phone: phoneE164,
       name: (profile?.full_name as string | undefined) ?? null,
       state: (profile?.state as string | null) ?? null,
       handedOff: (conversation as { handed_off: boolean }).handed_off,
-      messages: ((messages ?? []) as Array<{
-        id: string;
-        role: string;
-        content: string;
-        created_at: string;
-      }>).map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        createdAt: m.created_at,
-      })),
+      messages,
+      nextCursor,
     };
   }
 }
@@ -625,6 +689,21 @@ ${status}`;
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return max;
   return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
+/** Encodes a cursor payload into an opaque, URL-safe base64 string. */
+function encodeCursor(value: Record<string, unknown>): string {
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+
+/** Decodes an opaque cursor string back into its payload, or null if invalid. */
+function decodeCursor<T = Record<string, unknown>>(cursor?: string | null): T | null {
+  if (!cursor) return null;
+  try {
+    return JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as T;
+  } catch {
+    return null;
+  }
 }
 
 export const sidoBotService = new SidoBotService();
