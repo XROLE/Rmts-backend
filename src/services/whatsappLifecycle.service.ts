@@ -4,6 +4,7 @@ import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { whatsappService } from './whatsapp.service.js';
 import { paystackService } from './paystack.service.js';
+import { emailService } from './email.service.js';
 import { getReplacementFormBaseUrl } from '../config/site.js';
 import { normalizePhoneToE164, normalizeAnyPhoneToE164, phoneLookupVariants } from '../utils/normalizePhone.js';
 
@@ -77,6 +78,14 @@ const MATCH_FEE_PITCH_TEXT =
   '• 24hr personal AI-assisted support on WhatsApp\n' +
   '• Security tips on how to spot a fishy roommate and stay safe throughout your roommate search journey\n\n' +
   `Please note: the fee is non-refundable. Your payment link is valid for ${MATCH_PAYMENT_LINK_EXPIRY_HOURS} hours; if it is not paid within that time, this match will be canceled. You will be connected with your matched roommate once the service fee is paid.`;
+
+const STANDALONE_FEE_PITCH_TEXT =
+  'This is a one-time service charge for the FairNest Housing matching service.\n\n' +
+  'Your fee covers:\n' +
+  '• Up to seven (7) different matches\n' +
+  '• 24hr personal AI-assisted support on WhatsApp\n' +
+  '• Security tips on how to spot a fishy roommate and stay safe throughout your roommate search journey\n\n' +
+  'Please note: the fee is non-refundable. Once paid, your account is activated and recorded as paid, and our team will reach out with your next steps.';
 
 export interface MatchParticipantRow {
   id: string;
@@ -863,6 +872,161 @@ export class WhatsAppLifecycleService {
   }
 
   /**
+   * Issues a standalone one-time service-fee payment link requested directly
+   * by a user through Sido (no pre-existing match). Initializes a Paystack
+   * transaction, records it in transactions (purpose: 'standalone_service_fee'),
+   * then sends the fee pitch plus the Paystack CTA button. The webhook
+   * (handleRoommateChargeSuccess -> fulfillStandaloneServiceFee) performs the
+   * post-payment side effects.
+   */
+  async issueStandaloneServiceFeeLink(phoneE164: string, name?: string): Promise<void> {
+    const phone =
+      normalizePhoneToE164(phoneE164) ??
+      normalizeAnyPhoneToE164(phoneE164) ??
+      phoneE164;
+
+    await this.ensureUser(phone, name);
+
+    const variants = phoneLookupVariants(phone);
+    const { data: profile } = await supabase
+      .from('roommate_profiles')
+      .select('full_name, email')
+      .in('phone_number', variants)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const email = profile?.email ?? syntheticEmail(phone);
+    const displayName = profile?.full_name ?? name ?? 'there';
+
+    const amountNg = MATCH_PAYMENT_AMOUNT_NGN;
+    const reference = randomUUID();
+    const initialized = await paystackService.initializePayment({
+      amountKobo: Math.round(amountNg * 100),
+      email,
+      reference,
+      callbackUrl: PAYMENT_RETURN_URL,
+      metadata: {
+        purpose: 'standalone_service_fee',
+        phone,
+        name: displayName,
+      },
+    });
+
+    const { error: txnError } = await supabase.from('transactions').insert({
+      reference,
+      user_phone: phone,
+      amount: amountNg,
+      status: 'PENDING',
+      purpose: 'standalone_service_fee',
+    });
+    if (txnError) {
+      throw new HttpError(500, `Failed to record service-fee transaction: ${txnError.message}`);
+    }
+
+    await whatsappService.sendText(phone, STANDALONE_FEE_PITCH_TEXT);
+    await whatsappService.sendCtaUrlButton({
+      to: phone,
+      displayText: `Pay ${naira(amountNg)} now`,
+      url: initialized.authorizationUrl,
+      header: 'Pay service fee 🏠',
+      body: 'Tap below to pay the one-time service charge and activate your FairNest Housing account.',
+    });
+
+    // Best-effort confirmation to the requester that the link is on its way.
+    await whatsappService.sendText(
+      phone,
+      "Here's your secure payment link above 👆 Tap 'Pay now' to complete the ₦2,750 service fee. Once paid, you'll get a receipt by email and your account will be activated.",
+    );
+  }
+
+  /**
+   * Post-payment fulfillment for a standalone service-fee transaction created
+   * via issueStandaloneServiceFeeLink. Records the user as matched + paid
+   * (profile status), emails both the user (receipt) and the company
+   * (notification), and sends the standard WhatsApp confirmation + safety +
+   * re-match messages so the experience mirrors a normal match unlock.
+   */
+  async fulfillStandaloneServiceFee(reference: string): Promise<void> {
+    const { data: txn, error: txnError } = await supabase
+      .from('transactions')
+      .select('reference, user_phone, amount')
+      .eq('reference', reference)
+      .maybeSingle();
+
+    if (txnError || !txn) {
+      console.error('[whatsapp] standalone fulfillment: transaction not found', reference);
+      return;
+    }
+
+    const phone = txn.user_phone as string;
+    const amountNg = Number(txn.amount ?? 0);
+
+    const variants = phoneLookupVariants(phone);
+    const { data: profile } = await supabase
+      .from('roommate_profiles')
+      .select('id, full_name, email')
+      .in('phone_number', variants)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const name = profile?.full_name ?? 'there';
+    const email = profile?.email ?? syntheticEmail(phone);
+
+    // Record the person as matched and paid.
+    if (profile?.id) {
+      const { error: statusError } = await supabase
+        .from('roommate_profiles')
+        .update({ status: 'paid' })
+        .eq('id', profile.id);
+      if (statusError) {
+        console.error('[whatsapp] failed to mark profile paid:', statusError.message);
+      }
+    }
+
+    // Emails to both the user and the company.
+    try {
+      await emailService.sendServiceFeeReceipt({ to: email, name, amountNg, reference });
+    } catch (err) {
+      console.error('[whatsapp] failed to send service-fee receipt:', err);
+    }
+    try {
+      await emailService.sendServiceFeeNotification({ name, phone, amountNg, reference });
+    } catch (err) {
+      console.error('[whatsapp] failed to send service-fee notification:', err);
+    }
+
+    // WhatsApp confirmation (no matched roommate to reveal) + safety + re-match.
+    await whatsappService.sendText(
+      phone,
+      '🎉 Payment confirmed! Your FairNest Housing account is now active and recorded as paid. Our team will reach out on WhatsApp with your next steps shortly.',
+    );
+    await whatsappService.sendText(
+      phone,
+      [
+        "🛡️ *Sido's safety squad — quick wins before you link up with a roommate:*",
+        '1. Do a video call first — a roommate who refuses camera calls is a big red flag 🚩',
+        '2. Inspect the apartment in daylight and bring a friend along.',
+        '3. Sign a roommate/sublet agreement before paying any holding deposit.',
+        '4. Never pay via wire transfer, gift cards, or untraceable channels.',
+        '5. A price way below the market rate is usually a phantom listing — be careful.',
+        '',
+        'FairNest Housing never collects rent, deposits or inspection fees on behalf of anyone.',
+      ].join('\n'),
+    );
+    await whatsappService.sendText(
+      phone,
+      [
+        '🔁 *Re-match policy*',
+        `If things do not work out, you can request a replacement match any time via ${getReplacementFormBaseUrl()}?phone=${phone}`,
+        '',
+        'Please note: replacement matches are an optional courtesy capped at operational limits — they are not an absolute legal right.',
+      ].join('\n'),
+    );
+  }
+
+  /**
    * Fulfills one paid side of an admin-confirmed match: connects the payer
    * with the matched roommate's contact details plus the standard safety and
    * re-match policy messages.
@@ -1452,7 +1616,7 @@ export class WhatsAppLifecycleService {
   }
 
   /** Finds or creates the users row for a WhatsApp-led phone identity. */
-  private async ensureUser(phoneE164: string, name?: string): Promise<UserRow> {
+  async ensureUser(phoneE164: string, name?: string): Promise<UserRow> {
     const { data: existing, error: findError } = await supabase
       .from('users')
       .select('id, full_name, email, phone, whatsapp_number')

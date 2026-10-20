@@ -433,6 +433,18 @@ export class PaymentService {
       return { handled: true };
     }
 
+    // Standalone Sido-generated service-fee payment (no match/participant):
+    // record the user as paid and fire the user + company emails + WhatsApp
+    // confirmation. The transaction's purpose discriminates this flow.
+    if (txn.purpose === 'standalone_service_fee' || (!txn.match_id && !txn.participant_id)) {
+      try {
+        await whatsappLifecycleService.fulfillStandaloneServiceFee(reference);
+      } catch (err) {
+        console.error('[paystack-webhook] standalone fulfillment failed:', err);
+      }
+      return { handled: true };
+    }
+
     if (txn.match_id) {
       await supabase
         .from('matches')

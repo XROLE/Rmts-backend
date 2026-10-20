@@ -66,6 +66,16 @@ JOBS & THE AMBASSADOR PROGRAM
 - Keep this to a few short messages; don't dump everything at once. Offer the sign-up link and
   invite them to ask if they'd like to know more.
 
+PAYMENT LINK / SERVICE FEE
+- When a user wants to pay the one-time service fee, generate a payment link, or asks for the
+  "pay now" / "service fee" link, call the request_payment_link tool. Do NOT describe the whole
+  fee or send a link yourself — the tool handles it.
+- The tool will ask the user to confirm by typing a one-time code that Sido shows them. Only
+  after they type that exact code will Sido send the Paystack payment link (a ₦2,750 one-time
+  service charge). Keep your reply short: tell them to check the code Sido just sent and type it
+  back to get their link.
+- Never ask for card details, OTPs or passwords in chat.
+
 REGISTRATION
 - Registration happens ON THE WEBSITE, not inside WhatsApp. When a user wants to register,
   join, sign up, or asks for the registration form or link, call the send_registration_invite
@@ -242,6 +252,19 @@ export const SIDO_TOOLS: SidoTool[] = [
       name: 'send_update_request_link',
       description:
         "Send the user a personalized link to update their roommate request (budget and preferred locations). Call this when the user asks to update, edit, change or fix their request, their budget, or their preferred locations, or asks for the update-request link. The tool looks up their profile by this WhatsApp number and pre-fills the link with their current phone, state, min budget, max budget and selected locations. If the user is not registered, it sends the FairNest Housing registration link instead.",
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'request_payment_link',
+      description:
+        "Start the one-time service-fee (₦2,750) payment-link flow. Call this when the user wants to pay the service fee, generate/pay a payment link, or asks for the 'pay now' / service-fee link. The tool asks the user to confirm with a one-time code it displays; only after they type that code does Sido send the Paystack payment link. Do not send any link or fee details yourself — the tool handles the confirmation and link delivery.",
       parameters: {
         type: 'object',
         properties: {},

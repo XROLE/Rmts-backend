@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { whatsappService } from './whatsapp.service.js';
+import { whatsappLifecycleService } from './whatsappLifecycle.service.js';
 import { emailService } from './email.service.js';
 import { SIDO_SYSTEM_PROMPT, SIDO_TOOLS } from '../knowledge/sido.js';
 import { phoneLookupVariants } from '../utils/normalizePhone.js';
@@ -26,6 +27,8 @@ interface ConversationRow {
   phone: string;
   handed_off: boolean;
   handed_off_at: string | null;
+  awaiting_payment_confirm: boolean;
+  payment_confirm_code: string | null;
 }
 
 interface HistoryMessage {
@@ -78,6 +81,37 @@ export class SidoBotService {
         console.log(`[sido] ${phoneE164} is handed off to a human; bot stays silent`);
         return;
       }
+    }
+
+    // Pending service-fee confirmation: the user previously asked for a payment
+    // link and was given a one-time code. If they now type that code, generate
+    // and send the link. Otherwise re-prompt with the code. This short-circuits
+    // the LLM so the code is matched deterministically.
+    if (conversation.awaiting_payment_confirm && conversation.payment_confirm_code) {
+      const typed = (text ?? '').trim().toUpperCase();
+      if (typed && typed === conversation.payment_confirm_code.toUpperCase()) {
+        await this.clearPaymentConfirm(phoneE164);
+        try {
+          await whatsappLifecycleService.issueStandaloneServiceFeeLink(phoneE164, name);
+          await this.logMessage(
+            phoneE164,
+            'assistant',
+            'Sent the ₦2,750 service-fee payment link (Paystack CTA).',
+          );
+        } catch (err) {
+          console.error('[sido] failed to issue service-fee link:', err);
+          const fallback =
+            "Sorry, I couldn't generate your payment link just now 🙈 Please try again in a moment, or type 'talk to human' for help.";
+          await whatsappService.sendText(phoneE164, fallback);
+          await this.logMessage(phoneE164, 'assistant', fallback);
+        }
+        return;
+      }
+
+      const rePrompt = `That doesn't match the code. To get your ₦2,750 service-fee payment link, please reply with this exact code: ${conversation.payment_confirm_code}`;
+      await whatsappService.sendText(phoneE164, rePrompt);
+      await this.logMessage(phoneE164, 'assistant', rePrompt);
+      return;
     }
 
     const history = await this.loadHistory(phoneE164, SIDO_MAX_HISTORY);
@@ -221,6 +255,10 @@ ${status}`;
       return this.sendUpdateRequestLink(phoneE164);
     }
 
+    if (toolName === 'request_payment_link') {
+      return this.beginPaymentLinkConfirmation(phoneE164);
+    }
+
     if (toolName === 'request_human_handover') {
       let summary = '';
       try {
@@ -234,6 +272,60 @@ ${status}`;
     }
 
     throw new Error(`Unknown Sido tool: ${toolName}`);
+  }
+
+  /**
+   * Starts the service-fee payment-link flow: generates a one-time confirmation
+   * code, stores it on the conversation, and returns the message Sido should
+   * send asking the user to type the code back before a link is issued.
+   */
+  private async beginPaymentLinkConfirmation(phoneE164: string): Promise<string> {
+    const code = this.generateConfirmCode();
+    await this.setPaymentConfirm(phoneE164, code);
+    return (
+      `Here is your one-time confirmation code to generate your ₦2,750 service-fee payment link:\n\n` +
+      `*${code}*\n\n` +
+      `Reply with this exact code to receive your secure Paystack payment link. ` +
+      `(The code expires once used or when you start a new request.)`
+    );
+  }
+
+  /** Generates a 6-character uppercase-alphanumeric confirmation code. */
+  private generateConfirmCode(): string {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/1/I
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    return code;
+  }
+
+  private async setPaymentConfirm(phoneE164: string, code: string): Promise<void> {
+    const { error } = await supabase
+      .from('sido_conversations')
+      .update({
+        awaiting_payment_confirm: true,
+        payment_confirm_code: code,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('phone', phoneE164);
+    if (error) {
+      console.error('[sido] failed to set payment confirm:', error.message);
+    }
+  }
+
+  private async clearPaymentConfirm(phoneE164: string): Promise<void> {
+    const { error } = await supabase
+      .from('sido_conversations')
+      .update({
+        awaiting_payment_confirm: false,
+        payment_confirm_code: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('phone', phoneE164);
+    if (error) {
+      console.error('[sido] failed to clear payment confirm:', error.message);
+    }
   }
 
   private async performHandover(phoneE164: string, name: string, summary: string) {
@@ -357,7 +449,7 @@ ${status}`;
     const { data, error } = await supabase
       .from('sido_conversations')
       .upsert({ phone: phoneE164 }, { onConflict: 'phone' })
-      .select('phone, handed_off, handed_off_at')
+      .select('phone, handed_off, handed_off_at, awaiting_payment_confirm, payment_confirm_code')
       .single();
 
     if (error || !data) {

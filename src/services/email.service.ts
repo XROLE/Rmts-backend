@@ -8,7 +8,7 @@ export interface SupportEmailPayload {
   userEmail?: string;
 }
 
-const DEFAULT_RESEND_FROM = '"Roommate NG" <onboarding@resend.dev>';
+const DEFAULT_RESEND_FROM = '"FairNest Housing" <onboarding@resend.dev>';
 
 /**
  * Sends application emails via Resend. Requires RESEND_API_KEY and a verified
@@ -272,7 +272,7 @@ export class EmailService {
 
   async sendSupportTicket(payload: SupportEmailPayload): Promise<void> {
     const supportEmail =
-      process.env.SUPPORT_EMAIL ?? 'urbannest.quick.support@gmail.com';
+      process.env.SUPPORT_EMAIL ?? 'eze.goodness@fairnesthousing.com';
 
     const text = [
       `New support ticket from Roommate NG`,
@@ -316,7 +316,7 @@ export class EmailService {
     summary: string;
   }): Promise<void> {
     const supportEmail =
-      process.env.SUPPORT_EMAIL ?? 'urbannest.quick.support@gmail.com';
+      process.env.SUPPORT_EMAIL ?? 'eze.goodness@fairnesthousing.com';
 
     const subject = process.env.SIDO_HANDOVER_SUBJECT ?? 'WhatsApp handover';
 
@@ -371,7 +371,7 @@ export class EmailService {
     githubUrl?: string;
   }): Promise<void> {
     const supportEmail =
-      process.env.SUPPORT_EMAIL ?? 'urbannest.quick.support@gmail.com';
+      process.env.SUPPORT_EMAIL ?? 'eze.goodness@fairnesthousing.com';
 
     const text = [
       `New job application from Roommate NG`,
@@ -512,6 +512,163 @@ export class EmailService {
         </body></html>
       `,
     });
+  }
+
+  /**
+   * Sends a branded payment receipt to the user after they pay the one-time
+   * service fee (standalone Sido-generated link). Best-effort and
+   * fire-and-forget from the caller's perspective.
+   */
+  async sendServiceFeeReceipt(payload: {
+    to: string;
+    name: string;
+    amountNg: number;
+    reference: string;
+  }): Promise<void> {
+    const amount = `NGN ${Number(payload.amountNg).toLocaleString('en-NG', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
+    const text = [
+      `Hi ${payload.name || 'there'},`,
+      '',
+      'Thank you for your payment! Your FairNest Housing service fee has been received.',
+      '',
+      `Amount: ${amount}`,
+      `Reference: ${payload.reference}`,
+      '',
+      'Your account is now active and recorded as paid. Our team will be in touch with your next steps on WhatsApp.',
+      '',
+      'The FairNest team',
+    ].join('\n');
+
+    await this.send({
+      to: payload.to,
+      subject: 'Payment received — FairNest Housing service fee',
+      text,
+      html: this.buildReceiptEmail({
+        name: payload.name,
+        amount,
+        reference: payload.reference,
+        title: 'Payment received',
+        badge: 'Payment Confirmed',
+        heading: 'Your service fee is confirmed',
+        body: 'Thanks for your payment! Your FairNest Housing account is now active and recorded as paid. We will reach out on WhatsApp with your next steps.',
+      }),
+    });
+  }
+
+  /**
+   * Notifies the company (support/finance inbox) that a user paid the
+   * standalone service fee via a Sido-generated link. Best-effort.
+   */
+  async sendServiceFeeNotification(payload: {
+    name: string;
+    phone: string;
+    amountNg: number;
+    reference: string;
+  }): Promise<void> {
+    const supportEmail =
+      process.env.SUPPORT_EMAIL ?? 'eze.goodness@fairnesthousing.com';
+
+    const amount = `NGN ${Number(payload.amountNg).toLocaleString('en-NG', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
+    const text = [
+      'Service fee payment received (Sido self-service link)',
+      '',
+      `Customer name: ${payload.name || 'Unknown'}`,
+      `WhatsApp number: ${payload.phone}`,
+      `Amount: ${amount}`,
+      `Reference: ${payload.reference}`,
+      '',
+      'The customer is now recorded as matched and paid.',
+    ].join('\n');
+
+    const html = `
+      <h2>Service fee payment received</h2>
+      <p><strong>Source:</strong> Sido self-service payment link</p>
+      <p><strong>Customer name:</strong> ${this.escapeHtml(payload.name || 'Unknown')}</p>
+      <p><strong>WhatsApp number:</strong> ${this.escapeHtml(payload.phone)}</p>
+      <p><strong>Amount:</strong> ${this.escapeHtml(amount)}</p>
+      <p><strong>Reference:</strong> ${this.escapeHtml(payload.reference)}</p>
+      <p>The customer is now recorded as <strong>matched and paid</strong>.</p>
+    `;
+
+    await this.send({
+      to: supportEmail,
+      subject: `[Service Fee] Payment received — ${payload.name || payload.phone}`,
+      text,
+      html,
+    });
+  }
+
+  /**
+   * Builds the branded receipt/notification email shared by the service-fee
+   * flows.
+   */
+  private buildReceiptEmail(payload: {
+    name: string;
+    amount: string;
+    reference: string;
+    title: string;
+    badge: string;
+    heading: string;
+    body: string;
+  }): string {
+    const { name, amount, reference, title, badge, heading, body } = payload;
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en"><head>
+      <meta charset="utf-8"/>
+      <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+      <title>${this.escapeHtml(title)}</title>
+      <link href="https://fonts.googleapis.com" rel="preconnect"/>
+      <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+      </head>
+      <body style="margin:0; padding:0; background-color:#F1F5F9; font-family:Plus Jakarta Sans,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F1F5F9;"><tr><td align="center" style="padding:0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px; background-color:#FFFFFF; border:1px solid #E2E8F0; border-radius:16px;">
+      <tr><td height="6" style="height:6px; font-size:0; line-height:0; background-color:#080E21; background-image:linear-gradient(to right,#080E21,#0284C7,#2EB1FF);"></td></tr>
+      <tr><td style="padding:20px 20px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+      <td valign="middle">
+      <div style="width:44px; height:44px; background-color:#080E21; border-radius:12px; text-align:center; line-height:44px; font-size:24px; font-weight:800; color:#FFFFFF;">F</div>
+      </td>
+      <td valign="middle" style="padding-left:12px;"><span style="font-size:22px; font-weight:800; color:#080E21; letter-spacing:-0.02em;">FairNest<span style="color:#0284C7; font-weight:600; font-size:17px;"> Housing</span></span></td>
+      </tr>
+      <tr><td align="right" style="padding:8px 0 0;"><span style="display:inline-block; padding:4px 12px; border-radius:999px; background-color:#ECFDF5; color:#047857; border:1px solid #A7F3D0; font-size:12px; font-weight:600;">${this.escapeHtml(badge)}</span></td></tr>
+      </table>
+      <h1 style="margin:24px 0 12px; font-size:26px; font-weight:800; color:#080E21; line-height:1.2; letter-spacing:-0.03em;">${this.escapeHtml(heading)}</h1>
+      <p style="margin:0 0 16px; font-size:15px; color:#334155; line-height:1.6;">${this.escapeHtml(body)}</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;">
+      <tr>
+      <td style="background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:16px; padding:12px 24px;">
+      <div style="font-size:13px; color:#64748B; font-weight:600; margin-bottom:4px;">Amount paid</div>
+      <div style="font-size:22px; font-weight:800; color:#080E21;">${this.escapeHtml(amount)}</div>
+      </td>
+      <td style="padding-left:12px; background-color:#F8FAFC; border:1px solid #E2E8F0; border-radius:16px; padding:12px 24px;">
+      <div style="font-size:13px; color:#64748B; font-weight:600; margin-bottom:4px;">Reference</div>
+      <div style="font-size:14px; font-weight:700; color:#080E21; font-family:Consolas,Menlo,monospace;">${this.escapeHtml(reference)}</div>
+      </td>
+      </tr>
+      </table>
+      <p style="margin:0; font-size:14px; color:#475569;">Hi ${this.escapeHtml(name || 'there')}, welcome to FairNest Housing — we're glad to have you 🏠</p>
+      <hr style="margin:20px 0; border:none; border-top:2px solid #F1F5F9;"/>
+      <div style="font-size:13px; color:#64748B; line-height:1.6;">
+      This message was sent by FairNest Housing in relation to your service-fee payment.
+      </div>
+      </td></tr>
+      </table>
+      </td></tr></table>
+      </body></html>
+    `;
   }
 
   private escapeHtml(value: string): string {
