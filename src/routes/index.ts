@@ -8,6 +8,7 @@ import paymentRoutes from './payment.routes.js';
 import matchRoutes from './match.routes.js';
 import whatsappRoutes from './whatsapp.routes.js';
 import jobRoutes from './job.routes.js';
+import monthlyRequestRoutes from './monthlyRequest.routes.js';
 
 const router = Router();
 
@@ -24,5 +25,6 @@ router.use('/payments', paymentRoutes);
 router.use('/matches', matchRoutes);
 router.use('/whatsapp', whatsappRoutes);
 router.use('/jobs', jobRoutes);
+router.use('/monthly-requests', monthlyRequestRoutes);
 
 export default router;
