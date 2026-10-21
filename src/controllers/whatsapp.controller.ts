@@ -6,6 +6,8 @@ import { whatsappLifecycleService } from '../services/whatsappLifecycle.service.
 import {
   MATCH_CONNECT_PAYLOAD,
   MATCH_DECLINE_PAYLOAD,
+  MONTHLY_PROCEED_PAYLOAD,
+  MONTHLY_DECLINE_PAYLOAD,
   type TriggerMatchInput,
 } from '../services/whatsappLifecycle.service.js';
 import { sidoBotService } from '../services/sidoBot.service.js';
@@ -204,6 +206,17 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
               payload,
             );
             console.log(`[whatsapp] match button from ${phoneE164} ->`, result);
+          } else if (
+            payload === MONTHLY_PROCEED_PAYLOAD ||
+            payload === MONTHLY_DECLINE_PAYLOAD
+          ) {
+            // Monthly space-available buttons: proceed -> fee link, decline -> clear notified.
+            const result = await whatsappLifecycleService.handleMonthlySpaceButtonReply(
+              phoneE164,
+              buttonText,
+              payload,
+            );
+            console.log(`[whatsapp] monthly button from ${phoneE164} ->`, result);
           } else {
             // Welcome template buttons (welcome_to_roommate_ng): confirm/decline.
             const result = await whatsappLifecycleService.handleWelcomeButtonReply(

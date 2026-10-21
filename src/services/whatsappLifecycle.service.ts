@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { whatsappService } from './whatsapp.service.js';
+import { sidoBotService } from './sidoBot.service.js';
 import { paystackService } from './paystack.service.js';
+import type { MonthlyRequestRecord } from './monthlyRequest.service.js';
 import { emailService } from './email.service.js';
 import { getReplacementFormBaseUrl } from '../config/site.js';
 import { normalizePhoneToE164, normalizeAnyPhoneToE164, phoneLookupVariants } from '../utils/normalizePhone.js';
@@ -56,6 +58,28 @@ const MATCH_TEMPLATE_ENABLED = process.env.WHATSAPP_MATCH_TEMPLATE_ENABLED !== '
 /** Quick-reply payloads echoed back on the match template buttons. */
 export const MATCH_CONNECT_PAYLOAD = 'connect_request';
 export const MATCH_DECLINE_PAYLOAD = 'decline_request';
+
+/** Template confirming a monthly shared-apartment request. No buttons — purely
+ * an acknowledgement that we'll notify them when space opens. Mirrors the
+ * roommate welcome template but without the confirm/decline step. */
+const MONTHLY_CONFIRM_TEMPLATE_NAME =
+  process.env.WHATSAPP_MONTHLY_CONFIRM_TEMPLATE_NAME ?? 'monthly_apt_request_confirmed';
+const MONTHLY_CONFIRM_TEMPLATE_LANG =
+  process.env.WHATSAPP_MONTHLY_CONFIRM_TEMPLATE_LANG ?? 'en_US';
+const MONTHLY_CONFIRM_TEMPLATE_ENABLED =
+  process.env.WHATSAPP_MONTHLY_CONFIRM_TEMPLATE_ENABLED !== 'false';
+/** Template sent when an available monthly shared space matches a request. */
+const MONTHLY_SPACE_TEMPLATE_NAME =
+  process.env.WHATSAPP_MONTHLY_SPACE_TEMPLATE_NAME ?? 'monthly_space_available';
+const MONTHLY_SPACE_TEMPLATE_LANG =
+  process.env.WHATSAPP_MONTHLY_SPACE_TEMPLATE_LANG ?? 'en_US';
+const MONTHLY_SPACE_TEMPLATE_ENABLED =
+  process.env.WHATSAPP_MONTHLY_SPACE_TEMPLATE_ENABLED !== 'false';
+/** Quick-reply payloads echoed back on the monthly space template buttons. */
+export const MONTHLY_PROCEED_PAYLOAD = 'monthly_proceed';
+export const MONTHLY_DECLINE_PAYLOAD = 'monthly_decline';
+/** Matching fee charged when a monthly request user taps "Proceed". */
+const MONTHLY_FEE_AMOUNT_NGN = MATCH_PAYMENT_AMOUNT_NGN;
 
 const MATCH_NO_BIO_FALLBACK =
   'User did not upload bio at this point, you can speak more with the user to find out the kind of person he is before agreeing to live together';
@@ -463,6 +487,346 @@ export class WhatsAppLifecycleService {
 
     console.warn('[whatsapp] unrecognized welcome button payload:', payload);
     return { handled: true };
+  }
+
+  /**
+   * Confirms a freshly created monthly shared-apartment request over WhatsApp
+   * and hands off to Sido for a warm follow-up message. No confirm/decline
+   * buttons are needed — this is informational only, and we never match the
+   * user with anyone; we just promise to notify them when space opens.
+   *
+   * Uses an approved template when available (works outside the 24h window);
+   * otherwise falls back to a plain text message (requires an open window).
+   */
+  async sendMonthlyRequestConfirmation(
+    input: MonthlyRequestRecord,
+  ): Promise<boolean> {
+    const phoneE164 =
+      normalizePhoneToE164(input.phone_number) ??
+      normalizeAnyPhoneToE164(input.phone_number);
+    if (!phoneE164) {
+      console.warn('[whatsapp] monthly confirmation skipped: invalid phone', input.phone_number);
+      return false;
+    }
+
+    const firstName = input.name.trim().split(/\s+/)[0] || 'there';
+    let sent = false;
+
+    if (MONTHLY_CONFIRM_TEMPLATE_ENABLED) {
+      try {
+        await whatsappService.sendTemplate({
+          to: phoneE164,
+          name: MONTHLY_CONFIRM_TEMPLATE_NAME,
+          language: MONTHLY_CONFIRM_TEMPLATE_LANG,
+          bodyParams: [firstName, input.preferred_location, input.state],
+        });
+        sent = true;
+      } catch (err) {
+        console.error('[whatsapp] monthly confirm template failed, falling back:', err);
+      }
+    }
+
+    if (!sent) {
+      try {
+        await whatsappService.sendText(
+          phoneE164,
+          `Hi ${firstName}! 👋 I'm Sido from Roommates NG. I've received your request for a monthly shared apartment in ${input.preferred_location}, ${input.state}. We'll notify you as soon as a space that fits your budget opens up there. Hang tight!`,
+        );
+        sent = true;
+      } catch (err) {
+        console.error('[whatsapp] monthly confirm text fallback failed:', err);
+        return false;
+      }
+    }
+
+    try {
+      await supabase
+        .from('monthly_apartment_requests')
+        .update({ confirmed_at: new Date().toISOString() })
+        .eq('id', input.id)
+        .is('confirmed_at', null);
+    } catch (err) {
+      console.error(
+        '[whatsapp] failed to record monthly confirmed_at:',
+        (err as Error)?.message,
+      );
+    }
+
+    // Sido follows up conversationally to confirm, mirroring the roommate flow.
+    if (sidoBotService.enabled) {
+      void sidoBotService
+        .handleInboundText(
+          phoneE164,
+          firstName,
+          "I just requested a monthly shared apartment.",
+          `The user just submitted a request for a monthly paid/shared apartment in ${input.preferred_location}, ${input.state} (budget around ${this.formatMonthlyBudgetRange(Number(input.budget_min ?? 0), Number(input.budget_max ?? input.budget_min ?? 0))}, move-in ${input.move_in_date}). They are NOT being matched with anyone — we will only notify them when a suitable space becomes available. Reply warmly to confirm their request was received and explain they'll hear from us when a space opens in their area.`,
+        )
+        .catch((err) => console.error('[whatsapp] sido monthly follow-up failed:', err));
+    }
+
+    return true;
+  }
+
+  /**
+   * Notifies a stored monthly request that a matching space has become
+   * available. Uses an approved template when available, else a plain text.
+   */
+  async sendMonthlySpaceAvailable(
+    input: MonthlyRequestRecord,
+  ): Promise<boolean> {
+    const phoneE164 =
+      normalizePhoneToE164(input.phone_number) ??
+      normalizeAnyPhoneToE164(input.phone_number);
+    if (!phoneE164) {
+      console.warn('[whatsapp] monthly space notify skipped: invalid phone', input.phone_number);
+      return false;
+    }
+
+    const firstName = input.name.trim().split(/\s+/)[0] || 'there';
+    const budgetLabel = this.formatMonthlyBudgetRange(
+      Number(input.budget_min ?? 0),
+      Number(input.budget_max ?? input.budget_min ?? 0),
+    );
+    let sent = false;
+
+    if (MONTHLY_SPACE_TEMPLATE_ENABLED) {
+      try {
+        await whatsappService.sendTemplate({
+          to: phoneE164,
+          name: MONTHLY_SPACE_TEMPLATE_NAME,
+          language: MONTHLY_SPACE_TEMPLATE_LANG,
+          // {{1}} name, {{2}} location, {{3}} state, {{4}} budget range
+          bodyParams: [firstName, input.preferred_location, input.state, budgetLabel],
+          buttonPayloads: [MONTHLY_PROCEED_PAYLOAD, MONTHLY_DECLINE_PAYLOAD],
+        });
+        sent = true;
+      } catch (err) {
+        console.error('[whatsapp] monthly space template failed, falling back:', err);
+      }
+    }
+
+    if (!sent) {
+      try {
+        await whatsappService.sendText(
+          phoneE164,
+          `Good news ${firstName}! 🎉 A monthly shared apartment in ${input.preferred_location}, ${input.state} around your budget of ${budgetLabel} is now available. Reply here and Sido will share the details and next steps.`,
+        );
+        sent = true;
+      } catch (err) {
+        console.error('[whatsapp] monthly space text fallback failed:', err);
+        return false;
+      }
+    }
+
+    return sent;
+  }
+
+  /** Formats a monthly budget band as "₦40,000 – ₦60,000/month". */
+  private formatMonthlyBudgetRange(min: number, max: number): string {
+    const lo = naira(Number(min ?? 0));
+    const hi = naira(Number(max ?? min ?? 0));
+    return lo === hi ? `${lo}/month` : `${lo} – ${hi}/month`;
+  }
+
+  /**
+   * Resolves the most recent monthly request for a phone number that is still
+   * in the "notified, awaiting decision" state (notified_at set, no payment
+   * yet). Used to attribute Proceed/Decline button taps to the right request.
+   */
+  private async findMonthlyRequestByAnyPhone(
+    phoneE164: string,
+  ): Promise<MonthlyRequestRecord | null> {
+    const variants = phoneLookupVariants(phoneE164);
+
+    const { data, error } = await supabase
+      .from('monthly_apartment_requests')
+      .select('*')
+      .in('phone_number', variants)
+      .not('notified_at', 'is', null)
+      .order('notified_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[whatsapp] failed to find monthly request by phone:', error.message);
+      return null;
+    }
+    return (data as MonthlyRequestRecord | null) ?? null;
+  }
+
+  /**
+   * Issues the one-time matching-fee payment link for a monthly request user
+   * who tapped "Proceed" on the space-available message. Mirrors
+   * issueStandaloneServiceFeeLink: initializes a Paystack transaction (purpose
+   * 'monthly_apartment_fee'), records it with the request_id, then sends the
+   * fee pitch plus the Paystack CTA button. Idempotent on an existing link.
+   */
+  async issueMonthlyFeeLink(
+    phoneE164: string,
+    request: MonthlyRequestRecord,
+  ): Promise<void> {
+    if (request.payment_reference) {
+      console.log('[whatsapp] monthly fee link already issued for request', request.id);
+      return;
+    }
+
+    const name = request.name?.trim() || 'there';
+    const email = request.email ?? syntheticEmail(phoneE164);
+
+    await this.ensureUser(phoneE164, name);
+
+    const amountNg = MONTHLY_FEE_AMOUNT_NGN;
+    const reference = randomUUID();
+    const initialized = await paystackService.initializePayment({
+      amountKobo: Math.round(amountNg * 100),
+      email,
+      reference,
+      callbackUrl: PAYMENT_RETURN_URL,
+      metadata: {
+        purpose: 'monthly_apartment_fee',
+        request_id: request.id,
+        phone: phoneE164,
+        name,
+      },
+    });
+
+    const { error: txnError } = await supabase.from('transactions').insert({
+      reference,
+      user_phone: phoneE164,
+      request_id: request.id,
+      amount: amountNg,
+      status: 'PENDING',
+      purpose: 'monthly_apartment_fee',
+    });
+    if (txnError) {
+      throw new HttpError(500, `Failed to record monthly fee transaction: ${txnError.message}`);
+    }
+
+    const { error: reqError } = await supabase
+      .from('monthly_apartment_requests')
+      .update({
+        payment_reference: reference,
+        payment_link_created_at: new Date().toISOString(),
+      })
+      .eq('id', request.id);
+    if (reqError) {
+      console.error('[whatsapp] failed to attach reference to monthly request:', reqError.message);
+    }
+
+    await whatsappService.sendText(
+      phoneE164,
+      `Awesome! 🏠 To secure this monthly shared apartment in ${request.preferred_location}, ${request.state}, please pay the one-time ${naira(amountNg)} matching fee. Once paid, Sido will share the full space details and next steps.`,
+    );
+    await whatsappService.sendCtaUrlButton({
+      to: phoneE164,
+      displayText: `Pay ${naira(amountNg)} now`,
+      url: initialized.authorizationUrl,
+      header: 'Pay matching fee 🏠',
+      body: 'Tap below to pay the one-time fee and lock in your monthly shared apartment.',
+    });
+  }
+
+  /**
+   * Handles Proceed/Decline taps on the monthly_space_available template.
+   *   monthly_proceed -> issue the matching-fee payment link
+   *   monthly_decline -> clear notified_at (so a future /notify can re-notify)
+   *                      and record declined_at.
+   */
+  async handleMonthlySpaceButtonReply(
+    fromPhone: string,
+    _buttonText: string,
+    payload: string,
+  ): Promise<{ handled: boolean; outcome?: 'proceeded' | 'declined' }> {
+    const phoneE164 =
+      normalizePhoneToE164(fromPhone) ?? normalizeAnyPhoneToE164(fromPhone);
+    if (!phoneE164) return { handled: false };
+
+    const request = await this.findMonthlyRequestByAnyPhone(phoneE164);
+    if (!request) {
+      console.warn('[whatsapp] monthly space button tapped but no request found', fromPhone);
+      return { handled: false };
+    }
+
+    if (payload === MONTHLY_PROCEED_PAYLOAD) {
+      try {
+        await this.issueMonthlyFeeLink(phoneE164, request);
+      } catch (err) {
+        console.error('[whatsapp] failed to issue monthly fee link:', err);
+        await whatsappService
+          .sendText(phoneE164, 'Something went wrong generating your payment link. Please try again shortly.')
+          .catch(() => undefined);
+      }
+      return { handled: true, outcome: 'proceeded' };
+    }
+
+    if (payload === MONTHLY_DECLINE_PAYLOAD) {
+      const { error } = await supabase
+        .from('monthly_apartment_requests')
+        .update({ notified_at: null, declined_at: new Date().toISOString() })
+        .eq('id', request.id);
+      if (error) {
+        console.error('[whatsapp] failed to clear monthly notified_at:', error.message);
+      } else {
+        await whatsappService
+          .sendText(
+            phoneE164,
+            "No wahala! We've noted your decision and won't bug you about this one. We'll reach out again if a better fit opens up. 👍",
+          )
+          .catch(() => undefined);
+      }
+      return { handled: true, outcome: 'declined' };
+    }
+
+    return { handled: true };
+  }
+
+  /**
+   * Post-payment fulfillment for a monthly_apartment_fee charge. Marks the
+   * request paid, emails the receipt + company notification, and confirms over
+   * WhatsApp that the space details will follow.
+   */
+  async fulfillMonthlyRequest(reference: string): Promise<void> {
+    const { data: txn, error: txnError } = await supabase
+      .from('transactions')
+      .select('reference, user_phone, amount, request_id')
+      .eq('reference', reference)
+      .maybeSingle();
+
+    if (txnError || !txn || !txn.request_id) {
+      console.error('[whatsapp] monthly fulfillment: transaction/request not found', reference);
+      return;
+    }
+
+    const phone = txn.user_phone as string;
+    const amountNg = Number(txn.amount ?? 0);
+    const requestId = txn.request_id as string;
+
+    const now = new Date().toISOString();
+    const { data: request, error: reqError } = await supabase
+      .from('monthly_apartment_requests')
+      .update({ paid_at: now })
+      .eq('id', requestId)
+      .select('name, email')
+      .maybeSingle();
+
+    if (reqError) {
+      console.error('[whatsapp] failed to mark monthly request paid:', reqError.message);
+    }
+
+    const name = (request?.name as string) ?? 'there';
+    const email = (request?.email as string) ?? syntheticEmail(phone);
+
+    try {
+      await emailService.sendServiceFeeReceipt({ to: email, name, amountNg, reference });
+      await emailService.sendServiceFeeNotification({ name, phone, amountNg, reference });
+    } catch (err) {
+      console.error('[whatsapp] failed to send monthly fee emails:', err);
+    }
+
+    await whatsappService.sendText(
+      phone,
+      '🎉 Payment confirmed! Thank you. Our team will share the full details of your monthly shared apartment and next steps on WhatsApp shortly.',
+    );
   }
 
   private budgetRangeLabel(min: number, max: number): string {
@@ -932,12 +1296,6 @@ export class WhatsAppLifecycleService {
       header: 'Pay service fee 🏠',
       body: 'Tap below to pay the one-time service charge and activate your FairNest Housing account.',
     });
-
-    // Best-effort confirmation to the requester that the link is on its way.
-    await whatsappService.sendText(
-      phone,
-      "Here's your secure payment link above 👆 Tap 'Pay now' to complete the ₦2,750 service fee. Once paid, you'll get a receipt by email and your account will be activated.",
-    );
   }
 
   /**
