@@ -47,6 +47,16 @@ export const notifyMonthlyRequestSchema = z.object({
   }),
 });
 
+/**
+ * Admin-only: paginated list of all monthly apartment form fillers.
+ */
+export const getAllMonthlyRequestsSchema = z.object({
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    offset: z.coerce.number().int().min(0).default(0),
+  }),
+});
+
 export type CreateMonthlyRequestInput = z.infer<
   typeof createMonthlyRequestSchema
 >['body'];
@@ -54,3 +64,7 @@ export type CreateMonthlyRequestInput = z.infer<
 export type NotifyMonthlyRequestInput = z.infer<
   typeof notifyMonthlyRequestSchema
 >['body'];
+
+export type GetAllMonthlyRequestsInput = z.infer<
+  typeof getAllMonthlyRequestsSchema
+>;

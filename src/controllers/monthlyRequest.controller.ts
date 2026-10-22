@@ -3,6 +3,7 @@ import { monthlyRequestService } from '../services/monthlyRequest.service.js';
 import type {
   CreateMonthlyRequestInput,
   NotifyMonthlyRequestInput,
+  GetAllMonthlyRequestsInput,
 } from '../schemas/monthlyRequest.schema.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
@@ -43,6 +44,25 @@ export const notifyMonthlyRequests = asyncHandler(
       success: true,
       message: `Notified ${result.notified} of ${result.total} matching requests`,
       data: result,
+    });
+  },
+);
+
+/**
+ * Admin-only: returns all users who filled the monthly apartment form,
+ * paginated and newest first.
+ */
+export const getAllMonthlyRequests = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { limit, offset } = req.query as unknown as GetAllMonthlyRequestsInput['query'];
+    const { items, total } = await monthlyRequestService.listAll(limit, offset);
+    res.status(200).json({
+      success: true,
+      message: 'Monthly apartment requests retrieved successfully',
+      data: {
+        items,
+        pagination: { total, limit, offset },
+      },
     });
   },
 );
