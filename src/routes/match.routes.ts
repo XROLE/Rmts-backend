@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
-import { getMatchesSchema, createMatchSchema } from '../schemas/match.schema.js';
-import { getMatches, createMatch } from '../controllers/match.controller.js';
+import { getMatchesSchema, createMatchSchema, computeMatchSchema } from '../schemas/match.schema.js';
+import { getMatches, createMatch, computeMatch } from '../controllers/match.controller.js';
 
 const router = Router();
 
@@ -23,6 +23,16 @@ router.post(
   requireAdmin,
   validate(createMatchSchema),
   createMatch,
+);
+
+// Admin-only: compute (without persisting) the match percentage for two
+// profiles supplied directly in the request body.
+router.post(
+  '/compute',
+  requireAuth,
+  requireAdmin,
+  validate(computeMatchSchema),
+  computeMatch,
 );
 
 export default router;

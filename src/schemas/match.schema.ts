@@ -19,4 +19,26 @@ export const createMatchSchema = z.object({
     }),
 });
 
+export const matchableProfileSchema = z
+  .object({
+    gender: z.string().trim().min(1).nullable().optional(),
+    state: z.string().trim().min(1).nullable().optional(),
+    religion: z.string().trim().min(1).nullable().optional(),
+    preferredLocations: z.array(z.string()).nullable().optional(),
+    budgetMin: z.number().nullable().optional(),
+    budgetMax: z.number().nullable().optional(),
+    expectedMoveInDate: z.string().trim().min(1).nullable().optional(),
+    occupation: z.string().trim().min(1).nullable().optional(),
+    smokingHabit: z.string().trim().min(1).nullable().optional(),
+    allowsPets: z.boolean().nullable().optional(),
+  })
+  .strict();
+
+export const computeMatchSchema = z.object({
+  body: z.object({
+    personA: matchableProfileSchema,
+    personB: matchableProfileSchema,
+  }),
+});
+
 export type CreateMatchInput = z.infer<typeof createMatchSchema>['body'];
