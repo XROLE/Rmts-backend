@@ -122,7 +122,7 @@ export class MatchService {
    * free of any other active match. The pair is stored with ordered ids
    * (a < b) so it stays unique, and both profiles move to 'matched'.
    */
-  async confirmMatch(profileAId: string, profileBId: string) {
+  async confirmMatch(profileAId: string, profileBId: string, force = false) {
     const { data, error } = await supabase
       .from('roommate_profiles')
       .select(PROFILE_SELECT)
@@ -141,28 +141,72 @@ export class MatchService {
 
     for (const profile of [profileA, profileB]) {
       if (!profile.is_active || !['new', 'rematch'].includes(String(profile.status))) {
-        throw new HttpError(
-          409,
-          `Profile ${profile.id} is not available for matching (status: ${profile.status})`,
-        );
+        if (!force) {
+          throw new HttpError(
+            409,
+            `Profile ${profile.id} is not available for matching (status: ${profile.status})`,
+          );
+        }
       }
     }
 
     const [aId, bId] = [profileAId, profileBId].sort();
 
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from('roommate_matches')
-      .select('id')
+      .select('id, roommate_profile_a_id, roommate_profile_b_id')
       .eq('status', 'active')
       .or(
         `roommate_profile_a_id.in.(${profileAId},${profileBId}),` +
           `roommate_profile_b_id.in.(${profileAId},${profileBId})`,
-      )
-      .limit(1)
-      .maybeSingle();
+      );
 
-    if (existing) {
-      throw new HttpError(409, 'One or both profiles already have an active match');
+    if (existingError) {
+      throw new HttpError(500, `Failed to look up existing matches: ${existingError.message}`);
+    }
+
+    if (existing && existing.length > 0) {
+      if (!force) {
+        const blocked = existing[0];
+        const blockedProfileId =
+          blocked.roommate_profile_a_id === profileAId ||
+          blocked.roommate_profile_a_id === profileBId
+            ? blocked.roommate_profile_a_id
+            : blocked.roommate_profile_b_id;
+        throw new HttpError(
+          409,
+          `Profile ${blockedProfileId} already has an active match (match ${blocked.id})`,
+        );
+      }
+
+      // Force override: close every active match involving either profile and
+      // release the old partners so neither side is left stranded, then proceed
+      // to create the new match.
+      const staleIds = existing.map((m) => m.id);
+      const stalePartnerIds = existing
+        .flatMap((m) => [m.roommate_profile_a_id, m.roommate_profile_b_id])
+        .filter((id) => id !== profileAId && id !== profileBId);
+
+      const { error: closeError } = await supabase
+        .from('roommate_matches')
+        .update({ status: 'closed' })
+        .in('id', staleIds);
+
+      if (closeError) {
+        throw new HttpError(500, `Failed to close conflicting matches: ${closeError.message}`);
+      }
+
+      if (stalePartnerIds.length) {
+        const { error: releaseError } = await supabase
+          .from('roommate_profiles')
+          .update({ status: 'new' })
+          .in('id', stalePartnerIds)
+          .eq('status', 'matched');
+
+        if (releaseError) {
+          console.error('Failed to release old match partners:', releaseError.message);
+        }
+      }
     }
 
     const matchA = toMatchable(profileA);
@@ -195,7 +239,10 @@ export class MatchService {
       .in('id', [profileAId, profileBId]);
 
     if (statusError) {
+      // Roll back the just-created match so we never leave an orphaned active
+      // match row attached to profiles that are still 'new'/'rematch'.
       console.error('Failed to mark profiles as matched:', statusError.message);
+      await supabase.from('roommate_matches').delete().eq('id', match.id);
     }
 
     return {

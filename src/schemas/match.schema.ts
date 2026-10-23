@@ -13,6 +13,7 @@ export const createMatchSchema = z.object({
     .object({
       roommateProfileAId: z.string().uuid('A valid roommate profile ID is required'),
       roommateProfileBId: z.string().uuid('A valid roommate profile ID is required'),
+      force: z.boolean().optional(),
     })
     .refine((val) => val.roommateProfileAId !== val.roommateProfileBId, {
       message: 'A profile cannot be matched with itself',

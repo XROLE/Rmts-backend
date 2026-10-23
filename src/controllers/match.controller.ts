@@ -25,8 +25,8 @@ export const getMatches = asyncHandler(
 
 export const createMatch = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
-    const { roommateProfileAId, roommateProfileBId } = req.body;
-    const result = await matchService.confirmMatch(roommateProfileAId, roommateProfileBId);
+    const { roommateProfileAId, roommateProfileBId, force } = req.body;
+    const result = await matchService.confirmMatch(roommateProfileAId, roommateProfileBId, force);
 
     // Send the match template to both roommates and record their
     // confirmation state. Fire-and-forget so a WhatsApp failure never
