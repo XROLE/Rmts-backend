@@ -5,11 +5,13 @@ import { requireAdmin } from '../middleware/requireAdmin.js';
 import {
   createProfileSchema,
   getAllUsersSchema,
+  getProfileByLookupSchema,
   updateProfileSchema,
 } from '../schemas/profile.schema.js';
 import {
   createProfile,
   getAllUsers,
+  getProfileByLookup,
   getProfileStats,
   updateProfileByPhone,
 } from '../controllers/profile.controller.js';
@@ -37,6 +39,15 @@ router.get(
   requireAdmin,
   validate(getAllUsersSchema),
   getAllUsers,
+);
+
+// Admin-only: look up a single roommate profile by email or phone number.
+router.get(
+  '/lookup',
+  requireAuth,
+  requireAdmin,
+  validate(getProfileByLookupSchema),
+  getProfileByLookup,
 );
 
 export default router;

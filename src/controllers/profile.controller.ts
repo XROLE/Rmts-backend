@@ -4,7 +4,10 @@ import { whatsappLifecycleService } from '../services/whatsappLifecycle.service.
 import type { WelcomeProfileInput } from '../services/whatsappLifecycle.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
-import type { UpdateProfileInput } from '../schemas/profile.schema.js';
+import type {
+  UpdateProfileInput,
+  GetProfileByLookupInput,
+} from '../schemas/profile.schema.js';
 
 /**
  * Handles the public registration + profile creation flow.
@@ -79,6 +82,21 @@ export const getAllUsers = asyncHandler(
         items,
         pagination: { total, limit, offset },
       },
+    });
+  },
+);
+
+/**
+ * Handles admin lookup of a roommate profile by email or phone number.
+ */
+export const getProfileByLookup = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { email, phoneNumber } = req.query as GetProfileByLookupInput;
+    const profile = await profileService.getByLookup({ email, phoneNumber });
+    res.status(200).json({
+      success: true,
+      message: 'Profile retrieved successfully',
+      data: profile,
     });
   },
 );
