@@ -21,7 +21,7 @@ const LOCKED_EDIT_STATUSES = [
 ] as const;
 
 const EDITABLE_SELECT =
-  'id, full_name, phone_number, gender, age_range, state, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, created_at, updated_at';
+  'id, full_name, email, phone_number, gender, age_range, state, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, created_at, updated_at';
 
 export interface CreateProfilePayload {
   email: string;
@@ -280,6 +280,44 @@ export class ProfileService {
       items: listResult.data ?? [],
       total: countResult.count ?? 0,
     };
+  }
+
+  /**
+   * Looks up a single roommate profile by email or phone number. Exactly one
+   * identifier must be provided by the caller (enforced at the schema layer).
+   *
+   * Phone is matched against every serialized form of the same number
+   * (+234/0/bare digits) via phoneLookupVariants, so any stored format matches.
+   * Email uses a case-insensitive match (roommate_profiles.email is optional).
+   * Returns the full profile, or throws 404 when no match exists.
+   */
+  async getByLookup(opts: { email?: string; phoneNumber?: string }) {
+    let query = supabase
+      .from('roommate_profiles')
+      .select(EDITABLE_SELECT)
+      .limit(1);
+
+    if (opts.phoneNumber) {
+      const normalized =
+        normalizeAnyPhoneToE164(opts.phoneNumber) ?? opts.phoneNumber;
+      const variants = phoneLookupVariants(normalized);
+      query = query.in('phone_number', variants);
+    } else if (opts.email) {
+      query = query.ilike('email', opts.email);
+    } else {
+      throw new HttpError(400, 'Provide either an email or a phoneNumber');
+    }
+
+    const { data: profile, error } = await query.maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to look up profile: ${error.message}`);
+    }
+    if (!profile) {
+      throw new HttpError(404, 'No roommate profile found for the given details');
+    }
+
+    return profile;
   }
 
   /**

@@ -131,6 +131,31 @@ export const updateProfileSchema = z
       ),
   });
 
+/**
+ * GET /profiles/lookup — admin lookup of a roommate profile by email or phone.
+ *
+ * Exactly one of `email` or `phoneNumber` must be supplied. Phone is matched
+ * against all serialized forms of the same number; email is a case-insensitive
+ * match (roommate_profiles.email is optional).
+ */
+export const getProfileByLookupSchema = z.object({
+  query: z
+    .object({
+      email: z.string().email('A valid email is required').optional(),
+      phoneNumber: z
+        .string()
+        .regex(
+          SUPPORTED_PHONE_REGEX,
+          'Phone number must be a valid Nigerian or UK phone number',
+        )
+        .optional(),
+    })
+    .refine(
+      (data) => Boolean(data.email) || Boolean(data.phoneNumber),
+      { message: 'Provide either an email or a phoneNumber to look up a profile' },
+    ),
+});
+
 export type CreateProfileInput = z.infer<
   typeof createProfileSchema
 >['body'];
@@ -138,3 +163,7 @@ export type CreateProfileInput = z.infer<
 export type UpdateProfileInput = z.infer<
   typeof updateProfileSchema
 >['body'];
+
+export type GetProfileByLookupInput = z.infer<
+  typeof getProfileByLookupSchema
+>['query'];

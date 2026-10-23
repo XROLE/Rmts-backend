@@ -116,6 +116,42 @@ export class MonthlyRequestService {
 
     return { notified, total: matches.length };
   }
+
+  /**
+   * Returns all monthly apartment requests, newest first, paginated.
+   * Admin-only. Each request row represents a user who filled the monthly
+   * apartment form.
+   */
+  async listAll(limit: number, offset: number) {
+    const [listResult, countResult] = await Promise.all([
+      supabase
+        .from('monthly_apartment_requests')
+        .select(SELECT)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1),
+      supabase
+        .from('monthly_apartment_requests')
+        .select('id', { count: 'exact', head: true }),
+    ]);
+
+    if (listResult.error) {
+      throw new HttpError(
+        500,
+        `Failed to fetch monthly requests: ${listResult.error.message}`,
+      );
+    }
+    if (countResult.error) {
+      throw new HttpError(
+        500,
+        `Failed to count monthly requests: ${countResult.error.message}`,
+      );
+    }
+
+    return {
+      items: listResult.data ?? [],
+      total: countResult.count ?? 0,
+    };
+  }
 }
 
 export interface MonthlyRequestRecord {
