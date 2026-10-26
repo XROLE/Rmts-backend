@@ -96,6 +96,52 @@ export const getAllUsersSchema = z.object({
 });
 
 /**
+ * GET /profiles/search — admin search over roommate profiles.
+ *
+ * `state` is the only required filter; every other field is optional and
+ * combined with AND. Budget filters use range-overlap semantics: a profile
+ * matches when its own budget range intersects the requested [min,max] window.
+ * `isActive` defaults to true (only active profiles) when omitted.
+ */
+export const searchProfilesSchema = z
+  .object({
+    query: z
+      .object({
+        state: z.string().min(1, 'State is required'),
+        location: z.string().max(100).optional(),
+        minBudget: z.coerce.number().min(0).optional(),
+        maxBudget: z.coerce.number().min(0).optional(),
+        moveInDateFrom: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, {
+            message: 'moveInDateFrom must be a YYYY-MM-DD date',
+          })
+          .optional(),
+        moveInDateTo: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, {
+            message: 'moveInDateTo must be a YYYY-MM-DD date',
+          })
+          .optional(),
+        status: z.string().max(50).optional(),
+        gender: GENDER.optional(),
+        isActive: z.coerce.boolean().optional(),
+        limit: z.coerce.number().int().min(1).max(100).default(20),
+        offset: z.coerce.number().int().min(0).default(0),
+      })
+      .refine(
+        (data) =>
+          data.minBudget === undefined ||
+          data.maxBudget === undefined ||
+          data.maxBudget >= data.minBudget,
+        {
+          message: 'maxBudget must be greater than or equal to minBudget',
+          path: ['maxBudget'],
+        },
+      ),
+  });
+
+/**
  * PATCH /profiles/by-phone — lets a user update their roommate request.
  *
  * Ownership is established by the Sido/WhatsApp conversation: the caller
@@ -166,4 +212,8 @@ export type UpdateProfileInput = z.infer<
 
 export type GetProfileByLookupInput = z.infer<
   typeof getProfileByLookupSchema
+>['query'];
+
+export type SearchProfilesInput = z.infer<
+  typeof searchProfilesSchema
 >['query'];

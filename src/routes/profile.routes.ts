@@ -6,6 +6,7 @@ import {
   createProfileSchema,
   getAllUsersSchema,
   getProfileByLookupSchema,
+  searchProfilesSchema,
   updateProfileSchema,
 } from '../schemas/profile.schema.js';
 import {
@@ -13,6 +14,7 @@ import {
   getAllUsers,
   getProfileByLookup,
   getProfileStats,
+  searchProfiles,
   updateProfileByPhone,
 } from '../controllers/profile.controller.js';
 
@@ -39,6 +41,15 @@ router.get(
   requireAdmin,
   validate(getAllUsersSchema),
   getAllUsers,
+);
+
+// Admin-only: filtered search over roommate profiles (state required).
+router.get(
+  '/search',
+  requireAuth,
+  requireAdmin,
+  validate(searchProfilesSchema),
+  searchProfiles,
 );
 
 // Admin-only: look up a single roommate profile by email or phone number.

@@ -7,6 +7,7 @@ import type { AuthenticatedRequest } from '../middleware/auth.js';
 import type {
   UpdateProfileInput,
   GetProfileByLookupInput,
+  SearchProfilesInput,
 } from '../schemas/profile.schema.js';
 
 /**
@@ -97,6 +98,29 @@ export const getProfileByLookup = asyncHandler(
       success: true,
       message: 'Profile retrieved successfully',
       data: profile,
+    });
+  },
+);
+
+/**
+ * Handles admin search over roommate profiles. `state` is required; all other
+ * filters are optional and combined with AND. Returns a paginated list.
+ */
+export const searchProfiles = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const filters = req.query as unknown as SearchProfilesInput;
+    const { items, total } = await profileService.search(filters);
+    res.status(200).json({
+      success: true,
+      message: 'Profiles retrieved successfully',
+      data: {
+        items,
+        pagination: {
+          total,
+          limit: filters.limit,
+          offset: filters.offset,
+        },
+      },
     });
   },
 );
