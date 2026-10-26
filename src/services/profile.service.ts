@@ -11,6 +11,16 @@ import {
  * Editing is blocked once a match has been found or payment is in flight, to
  * avoid tampering with an active match. Allowed: new, reviewing, paused.
  */
+/**
+ * Quotes a value for use as a single element inside a PostgREST array literal
+ * (e.g. `preferred_locations.cs.{...}`). Wrapping in double quotes keeps
+ * elements with spaces or commas (e.g. "Ajah, Lagos") intact, and embedded
+ * double quotes are escaped by doubling.
+ */
+function quoteArrayElement(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
 const LOCKED_EDIT_STATUSES = [
   'potential_match_found',
   'waiting_approval',
@@ -276,11 +286,11 @@ export class ProfileService {
           ? filters.location
           : [filters.location]
         )
-          .map((l) => `${l}`.replace(/[\\%_]/g, '\\$&'))
+          .map((l) => `${l}`.trim())
           .filter(Boolean);
         if (locs.length) {
           const or = locs
-            .map((l) => `preferred_locations.ilike.%${l}%`)
+            .map((l) => `preferred_locations.cs.{${quoteArrayElement(l)}}`)
             .join(',');
           q = q.or(or);
         }
