@@ -108,7 +108,7 @@ export const searchProfilesSchema = z
     query: z
       .object({
         state: z.string().min(1, 'State is required'),
-        location: z.string().max(100).optional(),
+        location: z.union([z.string(), z.array(z.string())]).optional(),
         minBudget: z.coerce.number().min(0).optional(),
         maxBudget: z.coerce.number().min(0).optional(),
         moveInDateFrom: z

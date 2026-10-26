@@ -272,8 +272,18 @@ export class ProfileService {
     const applyFilters = (q: any) => {
       q = q.ilike('state', filters.state);
       if (filters.location) {
-        const loc = filters.location.replace(/[\\%_]/g, '\\$&');
-        q = q.filter('preferred_locations', 'ilike', `%${loc}%`);
+        const locs = (Array.isArray(filters.location)
+          ? filters.location
+          : [filters.location]
+        )
+          .map((l) => `${l}`.replace(/[\\%_]/g, '\\$&'))
+          .filter(Boolean);
+        if (locs.length) {
+          const or = locs
+            .map((l) => `preferred_locations.ilike.%${l}%`)
+            .join(',');
+          q = q.or(or);
+        }
       }
       if (filters.minBudget !== undefined) {
         q = q.gte('budget_max', filters.minBudget);
