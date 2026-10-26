@@ -1,6 +1,6 @@
 import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
-import type { UpdateProfileInput } from '../schemas/profile.schema.js';
+import type { UpdateProfileInput, SearchProfilesInput } from '../schemas/profile.schema.js';
 import {
   normalizeAnyPhoneToE164,
   phoneLookupVariants,
@@ -248,6 +248,78 @@ export class ProfileService {
       totalNewProfiles: newRes.count ?? 0,
       totalPendingPayments: pendingPaymentRes.count ?? 0,
       totalConnectedProfiles: connectedRes.count ?? 0,
+    };
+  }
+
+  /**
+   * Admin search over roommate profiles. `state` is required; all other
+   * filters are optional and combined with AND.
+   *
+   * Filter semantics:
+   *  - state: case-insensitive match
+   *  - location: array-contains on preferred_locations
+   *  - minBudget: profile budget_max >= minBudget (can afford at least this)
+   *  - maxBudget: profile budget_min <= maxBudget (fits within the cap)
+   *    -> together these yield range-overlap with [minBudget, maxBudget]
+   *  - moveInDateFrom/To: inclusive date range on expected_move_in_date
+   *  - status / gender: exact match
+   *  - isActive: exact match (defaults to true when omitted)
+   */
+  async search(filters: SearchProfilesInput) {
+    const select =
+      'id, full_name, phone_number, email, gender, age_range, state, marital_status, religion, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, smoking_habit, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, agreed_to_terms, created_at, updated_at';
+
+    const applyFilters = (q: any) => {
+      q = q.ilike('state', filters.state);
+      if (filters.location) {
+        const loc = filters.location.replace(/[\\%_]/g, '\\$&');
+        q = q.filter('preferred_locations', 'ilike', `%${loc}%`);
+      }
+      if (filters.minBudget !== undefined) {
+        q = q.gte('budget_max', filters.minBudget);
+      }
+      if (filters.maxBudget !== undefined) {
+        q = q.lte('budget_min', filters.maxBudget);
+      }
+      if (filters.moveInDateFrom) {
+        q = q.gte('expected_move_in_date', filters.moveInDateFrom);
+      }
+      if (filters.moveInDateTo) {
+        q = q.lte('expected_move_in_date', filters.moveInDateTo);
+      }
+      if (filters.status) {
+        q = q.eq('status', filters.status);
+      }
+      if (filters.gender) {
+        q = q.eq('gender', filters.gender);
+      }
+      if (filters.isActive !== undefined) {
+        q = q.eq('is_active', filters.isActive);
+      }
+      return q;
+    };
+
+    const { limit, offset } = filters;
+
+    const [listResult, countResult] = await Promise.all([
+      applyFilters(supabase.from('roommate_profiles').select(select))
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1),
+      applyFilters(
+        supabase.from('roommate_profiles').select('id', { count: 'exact', head: true }),
+      ),
+    ]);
+
+    if (listResult.error) {
+      throw new HttpError(500, `Failed to search profiles: ${listResult.error.message}`);
+    }
+    if (countResult.error) {
+      throw new HttpError(500, `Failed to count profiles: ${countResult.error.message}`);
+    }
+
+    return {
+      items: listResult.data ?? [],
+      total: countResult.count ?? 0,
     };
   }
 
