@@ -202,6 +202,31 @@ export const getProfileByLookupSchema = z.object({
     ),
 });
 
+/**
+ * PATCH /profiles/:id/status — admin sets a roommate request to paused or
+ * suspended. A reason is required when suspending so it can be communicated to
+ * the user in the WhatsApp notification; it is optional for pauses.
+ */
+export const updateProfileStatusSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('A valid profile id (uuid) is required'),
+  }),
+  body: z
+    .object({
+      status: z.enum(['paused', 'suspended']),
+      reason: z.string().max(500, 'Reason must be 500 characters or fewer').optional(),
+    })
+    .superRefine((data, ctx) => {
+      if (data.status === 'suspended' && !data.reason?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'A reason is required when suspending a profile',
+          path: ['reason'],
+        });
+      }
+    }),
+});
+
 export type CreateProfileInput = z.infer<
   typeof createProfileSchema
 >['body'];
@@ -217,3 +242,7 @@ export type GetProfileByLookupInput = z.infer<
 export type SearchProfilesInput = z.infer<
   typeof searchProfilesSchema
 >['query'];
+
+export type UpdateProfileStatusInput = z.infer<
+  typeof updateProfileStatusSchema
+>;

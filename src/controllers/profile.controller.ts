@@ -8,7 +8,9 @@ import type {
   UpdateProfileInput,
   GetProfileByLookupInput,
   SearchProfilesInput,
+  UpdateProfileStatusInput,
 } from '../schemas/profile.schema.js';
+import type { StatusChangeProfileInput } from '../services/whatsappLifecycle.service.js';
 
 /**
  * Handles the public registration + profile creation flow.
@@ -55,6 +57,39 @@ export const updateProfileByPhone = asyncHandler(
     res.status(200).json({
       success: true,
       message: 'Roommate request updated successfully',
+      data: profile,
+    });
+  },
+);
+
+/**
+ * Handles an admin setting a roommate request to `paused` or `suspended`.
+ *
+ * Sets the status (which also deactivates the profile so it stops being
+ * matched) and fires the matching Sido WhatsApp template fire-and-forget so a
+ * send failure never blocks the status change.
+ */
+export const updateProfileStatus = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params as UpdateProfileStatusInput['params'];
+    const { status, reason } = req.body as UpdateProfileStatusInput['body'];
+
+    const profile = await profileService.updateStatus(id, status, reason);
+
+    void whatsappLifecycleService
+      .sendProfileStatusTemplate(profile as StatusChangeProfileInput, status)
+      .then((sent) =>
+        console.log(
+          `[profile] status template ${sent ? 'sent' : 'skipped'} (${status})`,
+        ),
+      )
+      .catch((err) =>
+        console.error('[profile] status template failed:', err),
+      );
+
+    res.status(200).json({
+      success: true,
+      message: `Roommate request ${status} successfully`,
       data: profile,
     });
   },

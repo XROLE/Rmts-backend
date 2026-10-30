@@ -8,6 +8,7 @@ import {
   getProfileByLookupSchema,
   searchProfilesSchema,
   updateProfileSchema,
+  updateProfileStatusSchema,
 } from '../schemas/profile.schema.js';
 import {
   createProfile,
@@ -16,6 +17,7 @@ import {
   getProfileStats,
   searchProfiles,
   updateProfileByPhone,
+  updateProfileStatus,
 } from '../controllers/profile.controller.js';
 
 const router = Router();
@@ -29,6 +31,16 @@ router.patch(
   '/by-phone',
   validate(updateProfileSchema),
   updateProfileByPhone,
+);
+
+// Admin-only: set a roommate request to paused or suspended. Pausing/suspending
+// stops matching and notifies the user via a Sido WhatsApp template.
+router.patch(
+  '/:id/status',
+  requireAuth,
+  requireAdmin,
+  validate(updateProfileStatusSchema),
+  updateProfileStatus,
 );
 
 // Admin-only: dashboard profile lifecycle metrics.

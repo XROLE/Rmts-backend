@@ -82,7 +82,26 @@ export class SidoBotService {
     }
 
     const history = await this.loadHistory(phoneE164, SIDO_MAX_HISTORY);
-    const registered = (await this.findProfileByPhone(phoneE164)) !== null;
+    const profile = await this.findProfileByPhone(phoneE164);
+    const registered = profile !== null;
+
+    // A paused or suspended profile can't use the normal assistant flow. Short
+    // circuit with a canned Sido reply that states the status and points the
+    // user to the official support line and email.
+    if (profile && (profile.status === 'paused' || profile.status === 'suspended')) {
+      const reply = this.buildPausedSuspendedReply(name, profile.status);
+
+      if (SIDO_REPLY_DELAY_MAX_MS > SIDO_REPLY_DELAY_MIN_MS) {
+        const delay =
+          SIDO_REPLY_DELAY_MIN_MS +
+          Math.random() * (SIDO_REPLY_DELAY_MAX_MS - SIDO_REPLY_DELAY_MIN_MS);
+        await this.sleep(delay);
+      }
+
+      await whatsappService.sendText(phoneE164, reply);
+      await this.logMessage(phoneE164, 'assistant', reply);
+      return;
+    }
 
     let reply: string;
     try {
@@ -434,12 +453,14 @@ ${status}`;
       .reverse();
   }
 
-  private async findProfileByPhone(phoneE164: string): Promise<{ id: string } | null> {
+  private async findProfileByPhone(
+    phoneE164: string,
+  ): Promise<{ id: string; status: string } | null> {
     const variants = phoneLookupVariants(phoneE164);
 
     const { data, error } = await supabase
       .from('roommate_profiles')
-      .select('id')
+      .select('id, status')
       .in('phone_number', variants)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -448,7 +469,23 @@ ${status}`;
     if (error) {
       throw new HttpError(500, `Failed to look up existing profile: ${error.message}`);
     }
-    return (data as { id: string } | null) ?? null;
+    return (data as { id: string; status: string } | null) ?? null;
+  }
+
+  /**
+   * Canned Sido reply for a paused/suspended profile that messages the bot.
+   * States the current status and directs the user to the official support line
+   * and email, in keeping with Sido's warm, helpful voice.
+   */
+  private buildPausedSuspendedReply(
+    name: string,
+    status: 'paused' | 'suspended',
+  ): string {
+    const greeting = `Hi ${name?.trim() || 'there'}, I'm Sido from FairNest Housing 👋 `;
+    if (status === 'suspended') {
+      return `${greeting}your roommate request is currently **suspended**. Please contact our support line **08034363218** or email **hello@fairnesthousing.com** so we can help resolve this.`;
+    }
+    return `${greeting}your roommate request is currently **paused** — you won't receive new matches while it's paused. You can resume anytime by contacting our support line **08034363218** or email **hello@fairnesthousing.com**.`;
   }
 
   // ---------------------------------------------------------------
