@@ -85,7 +85,7 @@ const MONTHLY_FEE_AMOUNT_NGN = MATCH_PAYMENT_AMOUNT_NGN;
 const PROFILE_PAUSED_TEMPLATE_NAME =
   process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_NAME ?? 'profile_paused';
 const PROFILE_PAUSED_TEMPLATE_LANG =
-  process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_LANG ?? 'en_US';
+  process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_LANG ?? 'en';
 const PROFILE_PAUSED_TEMPLATE_ENABLED =
   process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_ENABLED !== 'false';
 
@@ -93,7 +93,7 @@ const PROFILE_PAUSED_TEMPLATE_ENABLED =
 const PROFILE_SUSPENDED_TEMPLATE_NAME =
   process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_NAME ?? 'profile_suspended';
 const PROFILE_SUSPENDED_TEMPLATE_LANG =
-  process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_LANG ?? 'en_US';
+  process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_LANG ?? 'en';
 const PROFILE_SUSPENDED_TEMPLATE_ENABLED =
   process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_ENABLED !== 'false';
 
@@ -498,26 +498,52 @@ export class WhatsAppLifecycleService {
 
     if (status === 'suspended') {
       if (!PROFILE_SUSPENDED_TEMPLATE_ENABLED) return false;
-      await whatsappService.sendTemplate({
-        to: phoneE164,
-        name: PROFILE_SUSPENDED_TEMPLATE_NAME,
-        language: PROFILE_SUSPENDED_TEMPLATE_LANG,
-        bodyParams: [
-          firstName,
-          input.status_reason?.trim() || 'a review of your account',
-        ],
-      });
-      return true;
+      const reason = input.status_reason?.trim() || 'a review of your account';
+      try {
+        await whatsappService.sendTemplate({
+          to: phoneE164,
+          name: PROFILE_SUSPENDED_TEMPLATE_NAME,
+          language: PROFILE_SUSPENDED_TEMPLATE_LANG,
+          bodyParams: [firstName, reason],
+        });
+        return true;
+      } catch (err) {
+        console.error('[whatsapp] suspended template failed, falling back:', err);
+      }
+      try {
+        await whatsappService.sendText(
+          phoneE164,
+          `Hi ${firstName}! Your Roommates NG request has been suspended: ${reason}. Reply here if you'd like to discuss this with our team.`,
+        );
+        return true;
+      } catch (err) {
+        console.error('[whatsapp] suspended text fallback failed:', err);
+        return false;
+      }
     }
 
     if (!PROFILE_PAUSED_TEMPLATE_ENABLED) return false;
-    await whatsappService.sendTemplate({
-      to: phoneE164,
-      name: PROFILE_PAUSED_TEMPLATE_NAME,
-      language: PROFILE_PAUSED_TEMPLATE_LANG,
-      bodyParams: [firstName, locationState, budget],
-    });
-    return true;
+    try {
+      await whatsappService.sendTemplate({
+        to: phoneE164,
+        name: PROFILE_PAUSED_TEMPLATE_NAME,
+        language: PROFILE_PAUSED_TEMPLATE_LANG,
+        bodyParams: [firstName, locationState, budget],
+      });
+      return true;
+    } catch (err) {
+      console.error('[whatsapp] paused template failed, falling back:', err);
+    }
+    try {
+      await whatsappService.sendText(
+        phoneE164,
+        `Hi ${firstName}! Your Roommates NG request has been paused for ${locationState} (budget ${budget}). You won't be matched while paused. Reply here when you're ready to resume.`,
+      );
+      return true;
+    } catch (err) {
+      console.error('[whatsapp] paused text fallback failed:', err);
+      return false;
+    }
   }
 
   /**
