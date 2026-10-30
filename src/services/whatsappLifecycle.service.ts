@@ -81,6 +81,22 @@ export const MONTHLY_DECLINE_PAYLOAD = 'monthly_decline';
 /** Matching fee charged when a monthly request user taps "Proceed". */
 const MONTHLY_FEE_AMOUNT_NGN = MATCH_PAYMENT_AMOUNT_NGN;
 
+/** Template sent to a profile owner when an admin pauses their request. */
+const PROFILE_PAUSED_TEMPLATE_NAME =
+  process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_NAME ?? 'profile_paused';
+const PROFILE_PAUSED_TEMPLATE_LANG =
+  process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_LANG ?? 'en_US';
+const PROFILE_PAUSED_TEMPLATE_ENABLED =
+  process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_ENABLED !== 'false';
+
+/** Template sent to a profile owner when an admin suspends their request. */
+const PROFILE_SUSPENDED_TEMPLATE_NAME =
+  process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_NAME ?? 'profile_suspended';
+const PROFILE_SUSPENDED_TEMPLATE_LANG =
+  process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_LANG ?? 'en_US';
+const PROFILE_SUSPENDED_TEMPLATE_ENABLED =
+  process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_ENABLED !== 'false';
+
 const MATCH_NO_BIO_FALLBACK =
   'User did not upload bio at this point, you can speak more with the user to find out the kind of person he is before agreeing to live together';
 
@@ -159,6 +175,18 @@ export interface WelcomeProfileInput {
   preferred_locations?: string[];
   budget_min?: number | null;
   budget_max?: number | null;
+}
+
+/** Subset of a roommate_profiles row needed to address the paused/suspended template. */
+export interface StatusChangeProfileInput {
+  id: string;
+  full_name: string;
+  phone_number: string;
+  state: string;
+  preferred_locations?: string[] | null;
+  budget_min?: number | null;
+  budget_max?: number | null;
+  status_reason?: string | null;
 }
 
 const DECLINE_REASONS = [
@@ -428,6 +456,67 @@ export class WhatsAppLifecycleService {
       console.error('[whatsapp] failed to record welcome_sent_at:', error.message);
     }
 
+    return true;
+  }
+
+  /**
+   * Sends the paused/suspended notification template to a profile owner when an
+   * admin changes their request status. The message is phrased in Sido's voice.
+   *
+   * Param mapping:
+   *   {{1}} = user's first name
+   *   {{2}} = the user's state (their roommate request "for" location)
+   *   {{3}} = status reason (suspended only; defaults when empty)
+   *
+   * Only fires when the matching WHATSAPP_PROFILE_*_TEMPLATE_ENABLED flag is on.
+   * Returns false and logs when the profile can't be addressed (missing/invalid
+   * phone or place).
+   */
+  async sendProfileStatusTemplate(
+    input: StatusChangeProfileInput,
+    status: 'paused' | 'suspended',
+  ): Promise<boolean> {
+    const phoneE164 =
+      normalizePhoneToE164(input.phone_number) ??
+      normalizeAnyPhoneToE164(input.phone_number);
+    if (!phoneE164) {
+      console.warn('[whatsapp] status template skipped: invalid phone', input.phone_number);
+      return false;
+    }
+
+    const firstName = input.full_name.trim().split(/\s+/)[0] || 'there';
+    const locationState = [
+      input.preferred_locations?.[0]?.trim(),
+      input.state?.trim(),
+    ]
+      .filter(Boolean)
+      .join(', ') || 'your area';
+    const budget = this.budgetRangeLabel(
+      Number(input.budget_min ?? 0),
+      Number(input.budget_max ?? 0),
+    );
+
+    if (status === 'suspended') {
+      if (!PROFILE_SUSPENDED_TEMPLATE_ENABLED) return false;
+      await whatsappService.sendTemplate({
+        to: phoneE164,
+        name: PROFILE_SUSPENDED_TEMPLATE_NAME,
+        language: PROFILE_SUSPENDED_TEMPLATE_LANG,
+        bodyParams: [
+          firstName,
+          input.status_reason?.trim() || 'a review of your account',
+        ],
+      });
+      return true;
+    }
+
+    if (!PROFILE_PAUSED_TEMPLATE_ENABLED) return false;
+    await whatsappService.sendTemplate({
+      to: phoneE164,
+      name: PROFILE_PAUSED_TEMPLATE_NAME,
+      language: PROFILE_PAUSED_TEMPLATE_LANG,
+      bodyParams: [firstName, locationState, budget],
+    });
     return true;
   }
 

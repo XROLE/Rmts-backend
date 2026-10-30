@@ -28,10 +28,12 @@ const LOCKED_EDIT_STATUSES = [
   'paid',
   'connected',
   'closed',
+  'paused',
+  'suspended',
 ] as const;
 
 const EDITABLE_SELECT =
-  'id, full_name, email, phone_number, gender, age_range, state, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, created_at, updated_at';
+  'id, full_name, email, phone_number, gender, age_range, state, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, status_reason, paused_at, suspended_at, created_at, updated_at';
 
 export interface CreateProfilePayload {
   email: string;
@@ -204,6 +206,62 @@ export class ProfileService {
 
     if (updateError) {
       throw new HttpError(500, `Failed to update profile: ${updateError.message}`);
+    }
+
+    return data;
+  }
+
+  /**
+   * Updates the lifecycle status of a roommate request by its primary id.
+   *
+   * `paused` and `suspended` both stop the profile from being matched: we set
+   * `is_active = false` and record the transition timestamp (`paused_at` /
+   * `suspended_at`) plus an optional `status_reason`. A reason is expected for
+   * `suspended` and is surfaced to the user in the WhatsApp notification.
+   * Returns the updated profile, or throws 404/500 as appropriate.
+   */
+  async updateStatus(
+    id: string,
+    status: 'paused' | 'suspended',
+    reason?: string,
+  ) {
+    const { data: existing, error: findError } = await supabase
+      .from('roommate_profiles')
+      .select('id')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (findError) {
+      throw new HttpError(500, `Failed to find profile: ${findError.message}`);
+    }
+    if (!existing) {
+      throw new HttpError(404, 'No roommate profile found for the given id');
+    }
+
+    const patch: Record<string, unknown> = {
+      status,
+      is_active: false,
+      status_reason: reason ?? null,
+      updated_at: new Date().toISOString(),
+    };
+    if (status === 'paused') {
+      patch.paused_at = new Date().toISOString();
+    } else {
+      patch.suspended_at = new Date().toISOString();
+    }
+
+    const { data, error: updateError } = await supabase
+      .from('roommate_profiles')
+      .update(patch)
+      .eq('id', id)
+      .select(EDITABLE_SELECT)
+      .single();
+
+    if (updateError) {
+      throw new HttpError(
+        500,
+        `Failed to update profile status: ${updateError.message}`,
+      );
     }
 
     return data;
