@@ -64,7 +64,7 @@ export class MatchService {
       .from('roommate_profiles')
       .select(PROFILE_SELECT)
       .eq('is_active', true)
-      .in('status', ['new', 'rematch']);
+      .in('status', ['new', 'rematch', 'active']);
 
     if (state) {
       query.ilike('state', state);
@@ -140,7 +140,7 @@ export class MatchService {
     }
 
     for (const profile of [profileA, profileB]) {
-      if (!profile.is_active || !['new', 'rematch'].includes(String(profile.status))) {
+      if (!profile.is_active || !['new', 'rematch', 'active'].includes(String(profile.status))) {
         if (!force) {
           throw new HttpError(
             409,

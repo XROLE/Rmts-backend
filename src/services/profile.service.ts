@@ -214,15 +214,16 @@ export class ProfileService {
   /**
    * Updates the lifecycle status of a roommate request by its primary id.
    *
-   * `paused` and `suspended` both stop the profile from being matched: we set
+   * `paused` and `suspended` stop the profile from being matched: we set
    * `is_active = false` and record the transition timestamp (`paused_at` /
-   * `suspended_at`) plus an optional `status_reason`. A reason is expected for
-   * `suspended` and is surfaced to the user in the WhatsApp notification.
+   * `suspended_at`) plus an optional `status_reason`. `active` reactivates a
+   * previously paused/suspended profile: we set `is_active = true` and clear
+   * the pause/suspension audit fields so it re-enters the matching pool.
    * Returns the updated profile, or throws 404/500 as appropriate.
    */
   async updateStatus(
     id: string,
-    status: 'paused' | 'suspended',
+    status: 'paused' | 'suspended' | 'active',
     reason?: string,
   ) {
     const { data: existing, error: findError } = await supabase
@@ -238,16 +239,29 @@ export class ProfileService {
       throw new HttpError(404, 'No roommate profile found for the given id');
     }
 
+    const now = new Date().toISOString();
     const patch: Record<string, unknown> = {
       status,
-      is_active: false,
-      status_reason: reason ?? null,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     };
-    if (status === 'paused') {
-      patch.paused_at = new Date().toISOString();
+
+    if (status === 'active') {
+      // Reactivation: return the profile to the matching pool, clearing any
+      // prior pause/suspension audit data and reason.
+      patch.is_active = true;
+      patch.status_reason = null;
+      patch.paused_at = null;
+      patch.suspended_at = null;
     } else {
-      patch.suspended_at = new Date().toISOString();
+      // Pausing or suspending removes the profile from the matching pool and
+      // records the transition timestamp (plus a reason for suspension).
+      patch.is_active = false;
+      patch.status_reason = reason ?? null;
+      if (status === 'paused') {
+        patch.paused_at = now;
+      } else {
+        patch.suspended_at = now;
+      }
     }
 
     const { data, error: updateError } = await supabase

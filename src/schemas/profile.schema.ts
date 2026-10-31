@@ -203,9 +203,12 @@ export const getProfileByLookupSchema = z.object({
 });
 
 /**
- * PATCH /profiles/:id/status — admin sets a roommate request to paused or
- * suspended. A reason is required when suspending so it can be communicated to
- * the user in the WhatsApp notification; it is optional for pauses.
+ * PATCH /profiles/:id/status — admin transitions a roommate request between
+ * lifecycle states. `paused` and `suspended` stop the profile from being
+ * matched; `active` reactivates a paused/suspended profile and returns it to
+ * the matching pool. A reason is required when suspending so it can be
+ * communicated to the user in the WhatsApp notification; it is optional for
+ * pauses and ignored for reactivations.
  */
 export const updateProfileStatusSchema = z.object({
   params: z.object({
@@ -213,7 +216,7 @@ export const updateProfileStatusSchema = z.object({
   }),
   body: z
     .object({
-      status: z.enum(['paused', 'suspended']),
+      status: z.enum(['paused', 'suspended', 'active']),
       reason: z.string().max(500, 'Reason must be 500 characters or fewer').optional(),
     })
     .superRefine((data, ctx) => {
