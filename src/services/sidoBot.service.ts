@@ -578,7 +578,9 @@ ${status}`;
       const bodyParams =
         status === 'suspended'
           ? [firstName, input.status_reason?.trim() || 'a review of your account']
-          : [firstName, locationState, budget];
+          : status === 'paused'
+            ? [firstName, locationState, budget]
+            : [firstName];
       try {
         await whatsappService.sendTemplate({
           to: phoneE164,
