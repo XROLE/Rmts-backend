@@ -89,7 +89,10 @@ export const updateProfileStatus = asyncHandler(
 
     res.status(200).json({
       success: true,
-      message: `Roommate request ${status} successfully`,
+      message:
+        status === 'active'
+          ? 'Roommate request reactivated successfully'
+          : `Roommate request ${status} successfully`,
       data: profile,
     });
   },

@@ -97,6 +97,14 @@ const PROFILE_SUSPENDED_TEMPLATE_LANG =
 const PROFILE_SUSPENDED_TEMPLATE_ENABLED =
   process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_ENABLED !== 'false';
 
+/** Template sent to a profile owner when an admin reactivates their request. */
+const PROFILE_ACTIVATED_TEMPLATE_NAME =
+  process.env.WHATSAPP_PROFILE_ACTIVATED_TEMPLATE_NAME ?? 'profile_activated';
+const PROFILE_ACTIVATED_TEMPLATE_LANG =
+  process.env.WHATSAPP_PROFILE_ACTIVATED_TEMPLATE_LANG ?? 'en';
+const PROFILE_ACTIVATED_TEMPLATE_ENABLED =
+  process.env.WHATSAPP_PROFILE_ACTIVATED_TEMPLATE_ENABLED !== 'false';
+
 const MATCH_NO_BIO_FALLBACK =
   'User did not upload bio at this point, you can speak more with the user to find out the kind of person he is before agreeing to live together';
 
@@ -474,7 +482,7 @@ export class WhatsAppLifecycleService {
    */
   async sendProfileStatusTemplate(
     input: StatusChangeProfileInput,
-    status: 'paused' | 'suspended',
+    status: 'paused' | 'suspended' | 'active',
   ): Promise<boolean> {
     const phoneE164 =
       normalizePhoneToE164(input.phone_number) ??
@@ -495,6 +503,31 @@ export class WhatsAppLifecycleService {
       Number(input.budget_min ?? 0),
       Number(input.budget_max ?? 0),
     );
+
+    if (status === 'active') {
+      if (!PROFILE_ACTIVATED_TEMPLATE_ENABLED) return false;
+      try {
+        await whatsappService.sendTemplate({
+          to: phoneE164,
+          name: PROFILE_ACTIVATED_TEMPLATE_NAME,
+          language: PROFILE_ACTIVATED_TEMPLATE_LANG,
+          bodyParams: [firstName, locationState, budget],
+        });
+        return true;
+      } catch (err) {
+        console.error('[whatsapp] activated template failed, falling back:', err);
+      }
+      try {
+        await whatsappService.sendText(
+          phoneE164,
+          `Hi ${firstName}! Good news — your Roommates NG request is active again for ${locationState} (budget ${budget}). You're back in the matching pool.`,
+        );
+        return true;
+      } catch (err) {
+        console.error('[whatsapp] activated text fallback failed:', err);
+        return false;
+      }
+    }
 
     if (status === 'suspended') {
       if (!PROFILE_SUSPENDED_TEMPLATE_ENABLED) return false;
