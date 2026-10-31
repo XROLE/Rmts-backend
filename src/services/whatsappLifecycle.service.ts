@@ -81,30 +81,6 @@ export const MONTHLY_DECLINE_PAYLOAD = 'monthly_decline';
 /** Matching fee charged when a monthly request user taps "Proceed". */
 const MONTHLY_FEE_AMOUNT_NGN = MATCH_PAYMENT_AMOUNT_NGN;
 
-/** Template sent to a profile owner when an admin pauses their request. */
-const PROFILE_PAUSED_TEMPLATE_NAME =
-  process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_NAME ?? 'profile_paused';
-const PROFILE_PAUSED_TEMPLATE_LANG =
-  process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_LANG ?? 'en';
-const PROFILE_PAUSED_TEMPLATE_ENABLED =
-  process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_ENABLED !== 'false';
-
-/** Template sent to a profile owner when an admin suspends their request. */
-const PROFILE_SUSPENDED_TEMPLATE_NAME =
-  process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_NAME ?? 'profile_suspended';
-const PROFILE_SUSPENDED_TEMPLATE_LANG =
-  process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_LANG ?? 'en';
-const PROFILE_SUSPENDED_TEMPLATE_ENABLED =
-  process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_ENABLED !== 'false';
-
-/** Template sent to a profile owner when an admin reactivates their request. */
-const PROFILE_ACTIVATED_TEMPLATE_NAME =
-  process.env.WHATSAPP_PROFILE_ACTIVATED_TEMPLATE_NAME ?? 'profile_activated';
-const PROFILE_ACTIVATED_TEMPLATE_LANG =
-  process.env.WHATSAPP_PROFILE_ACTIVATED_TEMPLATE_LANG ?? 'en';
-const PROFILE_ACTIVATED_TEMPLATE_ENABLED =
-  process.env.WHATSAPP_PROFILE_ACTIVATED_TEMPLATE_ENABLED !== 'false';
-
 const MATCH_NO_BIO_FALLBACK =
   'User did not upload bio at this point, you can speak more with the user to find out the kind of person he is before agreeing to live together';
 
@@ -480,103 +456,16 @@ export class WhatsAppLifecycleService {
    * Returns false and logs when the profile can't be addressed (missing/invalid
    * phone or place).
    */
+  /**
+   * Notifies a profile owner that an admin changed their request status. The
+   * actual WhatsApp template send and the Sido conversation-thread logging are
+   * delegated to Sido so the event is visible in the admin chat viewer.
+   */
   async sendProfileStatusTemplate(
     input: StatusChangeProfileInput,
     status: 'paused' | 'suspended' | 'active',
   ): Promise<boolean> {
-    const phoneE164 =
-      normalizePhoneToE164(input.phone_number) ??
-      normalizeAnyPhoneToE164(input.phone_number);
-    if (!phoneE164) {
-      console.warn('[whatsapp] status template skipped: invalid phone', input.phone_number);
-      return false;
-    }
-
-    const firstName = input.full_name.trim().split(/\s+/)[0] || 'there';
-    const locationState = [
-      input.preferred_locations?.[0]?.trim(),
-      input.state?.trim(),
-    ]
-      .filter(Boolean)
-      .join(', ') || 'your area';
-    const budget = this.budgetRangeLabel(
-      Number(input.budget_min ?? 0),
-      Number(input.budget_max ?? 0),
-    );
-
-    if (status === 'active') {
-      if (!PROFILE_ACTIVATED_TEMPLATE_ENABLED) return false;
-      try {
-        await whatsappService.sendTemplate({
-          to: phoneE164,
-          name: PROFILE_ACTIVATED_TEMPLATE_NAME,
-          language: PROFILE_ACTIVATED_TEMPLATE_LANG,
-          bodyParams: [firstName, locationState, budget],
-        });
-        return true;
-      } catch (err) {
-        console.error('[whatsapp] activated template failed, falling back:', err);
-      }
-      try {
-        await whatsappService.sendText(
-          phoneE164,
-          `Hi ${firstName}! Good news — your Roommates NG request is active again for ${locationState} (budget ${budget}). You're back in the matching pool.`,
-        );
-        return true;
-      } catch (err) {
-        console.error('[whatsapp] activated text fallback failed:', err);
-        return false;
-      }
-    }
-
-    if (status === 'suspended') {
-      if (!PROFILE_SUSPENDED_TEMPLATE_ENABLED) return false;
-      const reason = input.status_reason?.trim() || 'a review of your account';
-      try {
-        await whatsappService.sendTemplate({
-          to: phoneE164,
-          name: PROFILE_SUSPENDED_TEMPLATE_NAME,
-          language: PROFILE_SUSPENDED_TEMPLATE_LANG,
-          bodyParams: [firstName, reason],
-        });
-        return true;
-      } catch (err) {
-        console.error('[whatsapp] suspended template failed, falling back:', err);
-      }
-      try {
-        await whatsappService.sendText(
-          phoneE164,
-          `Hi ${firstName}! Your Roommates NG request has been suspended: ${reason}. Reply here if you'd like to discuss this with our team.`,
-        );
-        return true;
-      } catch (err) {
-        console.error('[whatsapp] suspended text fallback failed:', err);
-        return false;
-      }
-    }
-
-    if (!PROFILE_PAUSED_TEMPLATE_ENABLED) return false;
-    try {
-      await whatsappService.sendTemplate({
-        to: phoneE164,
-        name: PROFILE_PAUSED_TEMPLATE_NAME,
-        language: PROFILE_PAUSED_TEMPLATE_LANG,
-        bodyParams: [firstName, locationState, budget],
-      });
-      return true;
-    } catch (err) {
-      console.error('[whatsapp] paused template failed, falling back:', err);
-    }
-    try {
-      await whatsappService.sendText(
-        phoneE164,
-        `Hi ${firstName}! Your Roommates NG request has been paused for ${locationState} (budget ${budget}). You won't be matched while paused. Reply here when you're ready to resume.`,
-      );
-      return true;
-    } catch (err) {
-      console.error('[whatsapp] paused text fallback failed:', err);
-      return false;
-    }
+    return sidoBotService.notifyProfileStatusChange(input, status);
   }
 
   /**

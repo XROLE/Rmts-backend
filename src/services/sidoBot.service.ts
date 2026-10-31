@@ -5,8 +5,9 @@ import { whatsappService } from './whatsapp.service.js';
 import { whatsappLifecycleService } from './whatsappLifecycle.service.js';
 import { emailService } from './email.service.js';
 import { SIDO_SYSTEM_PROMPT, SIDO_TOOLS } from '../knowledge/sido.js';
-import { phoneLookupVariants } from '../utils/normalizePhone.js';
+import { phoneLookupVariants, normalizePhoneToE164, normalizeAnyPhoneToE164 } from '../utils/normalizePhone.js';
 import { getSiteBaseUrl } from '../config/site.js';
+import type { StatusChangeProfileInput } from './whatsappLifecycle.service.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
@@ -22,6 +23,28 @@ const SIDO_HANDOVER_PAUSE_BOT = process.env.SIDO_HANDOVER_PAUSE_BOT === 'true';
 /** Stale handovers auto-resume the bot after this window. */
 const SIDO_HANDOVER_AUTO_RESUME_MS =
   Number(process.env.SIDO_HANDOVER_AUTO_RESUME_HOURS ?? 24) * 60 * 60 * 1000;
+
+/** Templates Sido uses to tell a user their profile status changed (admin action). */
+const PROFILE_PAUSED_TEMPLATE_NAME =
+  process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_NAME ?? 'profile_paused';
+const PROFILE_PAUSED_TEMPLATE_LANG =
+  process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_LANG ?? 'en';
+const PROFILE_PAUSED_TEMPLATE_ENABLED =
+  process.env.WHATSAPP_PROFILE_PAUSED_TEMPLATE_ENABLED !== 'false';
+
+const PROFILE_SUSPENDED_TEMPLATE_NAME =
+  process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_NAME ?? 'profile_suspended';
+const PROFILE_SUSPENDED_TEMPLATE_LANG =
+  process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_LANG ?? 'en';
+const PROFILE_SUSPENDED_TEMPLATE_ENABLED =
+  process.env.WHATSAPP_PROFILE_SUSPENDED_TEMPLATE_ENABLED !== 'false';
+
+const PROFILE_ACTIVATED_TEMPLATE_NAME =
+  process.env.WHATSAPP_PROFILE_ACTIVATED_TEMPLATE_NAME ?? 'activate_roommate_profile';
+const PROFILE_ACTIVATED_TEMPLATE_LANG =
+  process.env.WHATSAPP_PROFILE_ACTIVATED_TEMPLATE_LANG ?? 'en';
+const PROFILE_ACTIVATED_TEMPLATE_ENABLED =
+  process.env.WHATSAPP_PROFILE_ACTIVATED_TEMPLATE_ENABLED !== 'false';
 
 interface ConversationRow {
   phone: string;
@@ -435,6 +458,15 @@ ${status}`;
     }
   }
 
+  /** Formats a budget range as "lo - hi" (in thousands), matching Sido's voice. */
+  private budgetRangeLabel(min: number, max: number): string {
+    const kMin = Math.round(min / 1000);
+    const kMax = Math.round(max / 1000);
+    const lo = Number.isFinite(kMin) ? kMin : 0;
+    const hi = Number.isFinite(kMax) && kMax > lo ? kMax : lo;
+    return hi > lo ? `${lo} - ${hi}` : `${lo}`;
+  }
+
   private async loadHistory(phoneE164: string, limit: number): Promise<HistoryMessage[]> {
     const { data, error } = await supabase
       .from('sido_messages')
@@ -486,6 +518,88 @@ ${status}`;
       return `${greeting}your roommate request is currently **suspended**. Please contact our support line **08034363218** or email **hello@fairnesthousing.com** so we can help resolve this.`;
     }
     return `${greeting}your roommate request is currently **paused** — you won't receive new matches while it's paused. You can resume anytime by contacting our support line **08034363218** or email **hello@fairnesthousing.com**.`;
+  }
+
+  /**
+   * Notifies a profile owner (in Sido's voice) that an admin changed their
+   * request status to paused, suspended, or active. Sends the matching
+   * WhatsApp template when its flag is enabled, and always logs the message
+   * into the Sido conversation thread so it is visible in the admin chat
+   * viewer. Template delivery failures fall back to a plain-text message.
+   */
+  async notifyProfileStatusChange(
+    input: StatusChangeProfileInput,
+    status: 'paused' | 'suspended' | 'active',
+  ): Promise<boolean> {
+    const phoneE164 =
+      normalizePhoneToE164(input.phone_number) ??
+      normalizeAnyPhoneToE164(input.phone_number);
+    if (!phoneE164) {
+      console.warn('[sido] profile status notify skipped: invalid phone', input.phone_number);
+      return false;
+    }
+
+    const firstName = input.full_name.trim().split(/\s+/)[0] || 'there';
+    const locationState = [input.preferred_locations?.[0]?.trim(), input.state?.trim()]
+      .filter(Boolean)
+      .join(', ') || 'your area';
+    const budget = this.budgetRangeLabel(
+      Number(input.budget_min ?? 0),
+      Number(input.budget_max ?? 0),
+    );
+
+    let templateName: string | null = null;
+    let templateLang = 'en';
+    let enabled = true;
+    let message: string;
+
+    if (status === 'suspended') {
+      const reason = input.status_reason?.trim() || 'a review of your account';
+      templateName = PROFILE_SUSPENDED_TEMPLATE_NAME;
+      templateLang = PROFILE_SUSPENDED_TEMPLATE_LANG;
+      enabled = PROFILE_SUSPENDED_TEMPLATE_ENABLED;
+      message = `Hi ${firstName}! Your Roommates NG request has been suspended: ${reason}. Reply here if you'd like to discuss this with our team.`;
+    } else if (status === 'paused') {
+      templateName = PROFILE_PAUSED_TEMPLATE_NAME;
+      templateLang = PROFILE_PAUSED_TEMPLATE_LANG;
+      enabled = PROFILE_PAUSED_TEMPLATE_ENABLED;
+      message = `Hi ${firstName}! Your Roommates NG request has been paused for ${locationState} (budget ${budget}). You won't be matched while paused. Reply here when you're ready to resume.`;
+    } else {
+      templateName = PROFILE_ACTIVATED_TEMPLATE_NAME;
+      templateLang = PROFILE_ACTIVATED_TEMPLATE_LANG;
+      enabled = PROFILE_ACTIVATED_TEMPLATE_ENABLED;
+      message = `Hi ${firstName}! Good news — your Roommates NG request is active again for ${locationState} (budget ${budget}). You're back in the matching pool.`;
+    }
+
+    // Ensure a Sido conversation exists so the event surfaces in the viewer.
+    await this.ensureConversation(phoneE164);
+
+    if (enabled && templateName) {
+      const bodyParams =
+        status === 'suspended'
+          ? [firstName, input.status_reason?.trim() || 'a review of your account']
+          : [firstName, locationState, budget];
+      try {
+        await whatsappService.sendTemplate({
+          to: phoneE164,
+          name: templateName,
+          language: templateLang,
+          bodyParams,
+        });
+      } catch (err) {
+        console.error(`[sido] ${status} template failed, falling back to text:`, err);
+        try {
+          await whatsappService.sendText(phoneE164, message);
+        } catch (e2) {
+          console.error(`[sido] ${status} text fallback failed:`, e2);
+        }
+      }
+    } else if (!enabled) {
+      console.log(`[sido] ${status} template disabled; logging only`);
+    }
+
+    await this.logMessage(phoneE164, 'assistant', message);
+    return true;
   }
 
   // ---------------------------------------------------------------
