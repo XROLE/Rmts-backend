@@ -35,7 +35,7 @@ const REGISTRATION_OCCUPATIONS = [
   'job_seeker',
 ] as const;
 const REGISTRATION_SMOKING_HABITS = ['non_smoker', 'occasional_smoker', 'regular_smoker'] as const;
-const MATCH_PAYMENT_AMOUNT_NGN = Number(
+export const MATCH_PAYMENT_AMOUNT_NGN = Number(
   process.env.WHATSAPP_MATCH_PAYMENT_AMOUNT_NGN ?? 2750,
 );
 const PAYMENT_RETURN_URL = process.env.PAYMENT_RETURN_URL;
@@ -215,7 +215,7 @@ function syntheticEmail(phoneE164: string): string {
   return `${phoneE164.replace(/\D/g, '')}@wa.roommateng.com`;
 }
 
-function naira(amountNg: number): string {
+export function naira(amountNg: number): string {
   return `₦${amountNg.toLocaleString('en-NG')}`;
 }
 
@@ -463,9 +463,36 @@ export class WhatsAppLifecycleService {
    */
   async sendProfileStatusTemplate(
     input: StatusChangeProfileInput,
-    status: 'paused' | 'suspended' | 'active',
+    status:
+      | 'paused'
+      | 'suspended'
+      | 'active'
+      | 'matched'
+      | 'pending_payment'
+      | 'paid'
+      | 'rematch',
+    opts: { sendTemplate: boolean },
   ): Promise<boolean> {
-    return sidoBotService.notifyProfileStatusChange(input, status);
+    // Active and paid are the only statuses whose WhatsApp template send is
+    // gated by the caller's `sendTemplate` flag. Paused/suspended keep their
+    // existing always-send behavior; the remaining lifecycle states
+    // (matched/pending_payment/rematch) have no template.
+    if (status === 'paid') {
+      if (opts.sendTemplate) {
+        return sidoBotService.notifyPaymentConfirmation(input);
+      }
+      return false;
+    }
+    if (status === 'active') {
+      if (opts.sendTemplate) {
+        return sidoBotService.notifyProfileReactivated(input);
+      }
+      return false;
+    }
+    if (status === 'paused' || status === 'suspended') {
+      return sidoBotService.notifyProfileStatusChange(input, status);
+    }
+    return false;
   }
 
   /**
