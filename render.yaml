@@ -60,3 +60,21 @@ services:
       - key: MATCH_PAYMENT_SCHEDULER_INTERVAL_MIN
         value: '15'
         sync: false
+      - key: WHATSAPP_PROFILE_REACTIVATED_TEMPLATE_NAME
+        value: profile_reactivated_notice
+        sync: false
+      - key: WHATSAPP_PROFILE_REACTIVATED_TEMPLATE_LANG
+        value: en
+        sync: false
+      - key: WHATSAPP_PROFILE_REACTIVATED_TEMPLATE_ENABLED
+        value: 'true'
+        sync: false
+      - key: WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_NAME
+        value: payment_confirmation
+        sync: false
+      - key: WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_LANG
+        value: en
+        sync: false
+      - key: WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_ENABLED
+        value: 'true'
+        sync: false

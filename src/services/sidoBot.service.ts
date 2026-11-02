@@ -48,7 +48,7 @@ const PROFILE_ACTIVATED_TEMPLATE_ENABLED =
 
 /** Template confirming a successful matching-fee payment (admin-flagged status). */
 const PAYMENT_CONFIRMATION_TEMPLATE_NAME =
-  process.env.WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_NAME ?? 'Payment_confirmation';
+  process.env.WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_NAME ?? 'payment_confirmation';
 const PAYMENT_CONFIRMATION_TEMPLATE_LANG =
   process.env.WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_LANG ?? 'en';
 const PAYMENT_CONFIRMATION_TEMPLATE_ENABLED =
@@ -56,7 +56,7 @@ const PAYMENT_CONFIRMATION_TEMPLATE_ENABLED =
 
 /** Template notifying a user their profile was reactivated (admin-flagged status). */
 const PROFILE_REACTIVATED_TEMPLATE_NAME =
-  process.env.WHATSAPP_PROFILE_REACTIVATED_TEMPLATE_NAME ?? 'Profile_reactivated_notice';
+  process.env.WHATSAPP_PROFILE_REACTIVATED_TEMPLATE_NAME ?? 'profile_reactivated_notice';
 const PROFILE_REACTIVATED_TEMPLATE_LANG =
   process.env.WHATSAPP_PROFILE_REACTIVATED_TEMPLATE_LANG ?? 'en';
 const PROFILE_REACTIVATED_TEMPLATE_ENABLED =
@@ -677,7 +677,7 @@ ${status}`;
   }
 
   /**
-   * Sends the Profile_reactivated_notice template to a profile owner when an
+   * Sends the profile_reactivated_notice template to a profile owner when an
    * admin reactivates their request. The message (Sido's voice) confirms the
    * profile is back in the matching queue.
    *
