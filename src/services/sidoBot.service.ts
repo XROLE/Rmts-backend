@@ -510,6 +510,7 @@ ${status}`;
       .from('roommate_profiles')
       .select('id, status')
       .in('phone_number', variants)
+      .order('updated_at', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
