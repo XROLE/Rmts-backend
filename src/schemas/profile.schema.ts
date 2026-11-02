@@ -216,7 +216,18 @@ export const updateProfileStatusSchema = z.object({
   }),
   body: z
     .object({
-      status: z.enum(['paused', 'suspended', 'active']),
+      status: z.enum([
+        'paused',
+        'suspended',
+        'active',
+        'matched',
+        'pending_payment',
+        'paid',
+        'rematch',
+      ]),
+      sendTemplate: z.boolean({
+        errorMap: () => ({ message: 'sendTemplate (boolean) is required' }),
+      }),
       reason: z.string().max(500, 'Reason must be 500 characters or fewer').optional(),
     })
     .superRefine((data, ctx) => {

@@ -223,7 +223,14 @@ export class ProfileService {
    */
   async updateStatus(
     id: string,
-    status: 'paused' | 'suspended' | 'active',
+    status:
+      | 'paused'
+      | 'suspended'
+      | 'active'
+      | 'matched'
+      | 'pending_payment'
+      | 'paid'
+      | 'rematch',
     reason?: string,
   ) {
     const { data: existing, error: findError } = await supabase
@@ -245,14 +252,14 @@ export class ProfileService {
       updated_at: now,
     };
 
-    if (status === 'active') {
-      // Reactivation: return the profile to the matching pool, clearing any
-      // prior pause/suspension audit data and reason.
+    if (status === 'active' || status === 'rematch') {
+      // Reactivation / re-match: return the profile to the matching pool,
+      // clearing any prior pause/suspension audit data and reason.
       patch.is_active = true;
       patch.status_reason = null;
       patch.paused_at = null;
       patch.suspended_at = null;
-    } else {
+    } else if (status === 'paused' || status === 'suspended') {
       // Pausing or suspending removes the profile from the matching pool and
       // records the transition timestamp (plus a reason for suspension).
       patch.is_active = false;
@@ -262,6 +269,12 @@ export class ProfileService {
       } else {
         patch.suspended_at = now;
       }
+    } else {
+      // matched / pending_payment / paid are terminal lifecycle states that
+      // take the profile out of the matching pool; no pause/suspension audit
+      // timestamps are recorded for them.
+      patch.is_active = false;
+      patch.status_reason = reason ?? null;
     }
 
     const { data, error: updateError } = await supabase

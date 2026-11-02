@@ -72,12 +72,14 @@ export const updateProfileByPhone = asyncHandler(
 export const updateProfileStatus = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     const { id } = req.params as UpdateProfileStatusInput['params'];
-    const { status, reason } = req.body as UpdateProfileStatusInput['body'];
+    const { status, reason, sendTemplate } = req.body as UpdateProfileStatusInput['body'];
 
     const profile = await profileService.updateStatus(id, status, reason);
 
     void whatsappLifecycleService
-      .sendProfileStatusTemplate(profile as StatusChangeProfileInput, status)
+      .sendProfileStatusTemplate(profile as StatusChangeProfileInput, status, {
+        sendTemplate,
+      })
       .then((sent) =>
         console.log(
           `[profile] status template ${sent ? 'sent' : 'skipped'} (${status})`,
@@ -92,7 +94,9 @@ export const updateProfileStatus = asyncHandler(
       message:
         status === 'active'
           ? 'Roommate request reactivated successfully'
-          : `Roommate request ${status} successfully`,
+          : status === 'paid'
+            ? 'Roommate request marked as paid successfully'
+            : `Roommate request ${status} successfully`,
       data: profile,
     });
   },

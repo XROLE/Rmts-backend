@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
 import { whatsappService } from './whatsapp.service.js';
-import { whatsappLifecycleService } from './whatsappLifecycle.service.js';
+import { whatsappLifecycleService, MATCH_PAYMENT_AMOUNT_NGN, naira } from './whatsappLifecycle.service.js';
 import { emailService } from './email.service.js';
 import { SIDO_SYSTEM_PROMPT, SIDO_TOOLS } from '../knowledge/sido.js';
 import { phoneLookupVariants, normalizePhoneToE164, normalizeAnyPhoneToE164 } from '../utils/normalizePhone.js';
@@ -45,6 +45,22 @@ const PROFILE_ACTIVATED_TEMPLATE_LANG =
   process.env.WHATSAPP_PROFILE_ACTIVATED_TEMPLATE_LANG ?? 'en';
 const PROFILE_ACTIVATED_TEMPLATE_ENABLED =
   process.env.WHATSAPP_PROFILE_ACTIVATED_TEMPLATE_ENABLED !== 'false';
+
+/** Template confirming a successful matching-fee payment (admin-flagged status). */
+const PAYMENT_CONFIRMATION_TEMPLATE_NAME =
+  process.env.WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_NAME ?? 'Payment_confirmation';
+const PAYMENT_CONFIRMATION_TEMPLATE_LANG =
+  process.env.WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_LANG ?? 'en';
+const PAYMENT_CONFIRMATION_TEMPLATE_ENABLED =
+  process.env.WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_ENABLED !== 'false';
+
+/** Template notifying a user their profile was reactivated (admin-flagged status). */
+const PROFILE_REACTIVATED_TEMPLATE_NAME =
+  process.env.WHATSAPP_PROFILE_REACTIVATED_TEMPLATE_NAME ?? 'Profile_reactivated_notice';
+const PROFILE_REACTIVATED_TEMPLATE_LANG =
+  process.env.WHATSAPP_PROFILE_REACTIVATED_TEMPLATE_LANG ?? 'en';
+const PROFILE_REACTIVATED_TEMPLATE_ENABLED =
+  process.env.WHATSAPP_PROFILE_REACTIVATED_TEMPLATE_ENABLED !== 'false';
 
 interface ConversationRow {
   phone: string;
@@ -598,6 +614,116 @@ ${status}`;
       }
     } else if (!enabled) {
       console.log(`[sido] ${status} template disabled; logging only`);
+    }
+
+    await this.logMessage(phoneE164, 'assistant', message);
+    return true;
+  }
+
+  /**
+   * Sends the Payment_confirmation template to a profile owner when an admin
+   * marks their request as paid. The message (Sido's voice) confirms the
+   * matching-fee payment and assures team follow-up.
+   *
+   * Param mapping:
+   *   {{1}} = user's first name
+   *   {{2}} = the matching fee amount in Naira
+   *
+   * Only fires when WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_ENABLED. Falls back
+   * to a plain-text mirror of the template copy on send failure, and always
+   * logs the message into the Sido conversation thread.
+   */
+  async notifyPaymentConfirmation(
+    input: StatusChangeProfileInput,
+  ): Promise<boolean> {
+    const phoneE164 =
+      normalizePhoneToE164(input.phone_number) ??
+      normalizeAnyPhoneToE164(input.phone_number);
+    if (!phoneE164) {
+      console.warn('[sido] payment confirmation skipped: invalid phone', input.phone_number);
+      return false;
+    }
+
+    const firstName = input.full_name.trim().split(/\s+/)[0] || 'there';
+    const amountLabel = naira(MATCH_PAYMENT_AMOUNT_NGN);
+
+    const message = `Hi ${firstName}, it's still your guy Sido, I want to let you know that your payment of ${amountLabel} was successful! I have notified the team and they will reach out asap. Thank you for choosing FairNest Housing.`;
+
+    // Ensure a Sido conversation exists so the event surfaces in the viewer.
+    await this.ensureConversation(phoneE164);
+
+    if (PAYMENT_CONFIRMATION_TEMPLATE_ENABLED) {
+      try {
+        await whatsappService.sendTemplate({
+          to: phoneE164,
+          name: PAYMENT_CONFIRMATION_TEMPLATE_NAME,
+          language: PAYMENT_CONFIRMATION_TEMPLATE_LANG,
+          bodyParams: [firstName, amountLabel],
+        });
+      } catch (err) {
+        console.error('[sido] payment confirmation template failed, falling back to text:', err);
+        try {
+          await whatsappService.sendText(phoneE164, message);
+        } catch (e2) {
+          console.error('[sido] payment confirmation text fallback failed:', e2);
+        }
+      }
+    } else {
+      console.log('[sido] payment confirmation template disabled; logging only');
+    }
+
+    await this.logMessage(phoneE164, 'assistant', message);
+    return true;
+  }
+
+  /**
+   * Sends the Profile_reactivated_notice template to a profile owner when an
+   * admin reactivates their request. The message (Sido's voice) confirms the
+   * profile is back in the matching queue.
+   *
+   * Param mapping:
+   *   {{1}} = user's first name
+   *
+   * Only fires when WHATSAPP_PROFILE_REACTIVATED_TEMPLATE_ENABLED. Falls back to
+   * a plain-text mirror of the template copy on send failure, and always logs
+   * the message into the Sido conversation thread.
+   */
+  async notifyProfileReactivated(
+    input: StatusChangeProfileInput,
+  ): Promise<boolean> {
+    const phoneE164 =
+      normalizePhoneToE164(input.phone_number) ??
+      normalizeAnyPhoneToE164(input.phone_number);
+    if (!phoneE164) {
+      console.warn('[sido] profile reactivated skipped: invalid phone', input.phone_number);
+      return false;
+    }
+
+    const firstName = input.full_name.trim().split(/\s+/)[0] || 'there';
+
+    const message = `Hi ${firstName}, your FairNest Housing profile is now active again! Your request is back in our matching queue, and you will start receiving updates for potential roommates and space recommendations immediately.`;
+
+    // Ensure a Sido conversation exists so the event surfaces in the viewer.
+    await this.ensureConversation(phoneE164);
+
+    if (PROFILE_REACTIVATED_TEMPLATE_ENABLED) {
+      try {
+        await whatsappService.sendTemplate({
+          to: phoneE164,
+          name: PROFILE_REACTIVATED_TEMPLATE_NAME,
+          language: PROFILE_REACTIVATED_TEMPLATE_LANG,
+          bodyParams: [firstName],
+        });
+      } catch (err) {
+        console.error('[sido] profile reactivated template failed, falling back to text:', err);
+        try {
+          await whatsappService.sendText(phoneE164, message);
+        } catch (e2) {
+          console.error('[sido] profile reactivated text fallback failed:', e2);
+        }
+      }
+    } else {
+      console.log('[sido] profile reactivated template disabled; logging only');
     }
 
     await this.logMessage(phoneE164, 'assistant', message);
