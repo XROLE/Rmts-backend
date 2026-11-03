@@ -151,6 +151,12 @@ export const getAmbassadorPayoutsSchema = z.object({
   }),
 });
 
+export const deleteAmbassadorSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('A valid ambassador profile ID is required'),
+  }),
+});
+
 export const confirmAmbassadorApprovalSchema = z.object({
   params: z.object({
     id: z.string().uuid('A valid ambassador profile ID is required'),
@@ -208,3 +214,7 @@ export type GetAmbassadorPayoutsInput = z.infer<
 export type ConfirmAmbassadorApprovalInput = z.infer<
   typeof confirmAmbassadorApprovalSchema
 >['body'];
+
+export type DeleteAmbassadorInput = z.infer<
+  typeof deleteAmbassadorSchema
+>['params'];

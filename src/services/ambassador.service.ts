@@ -211,15 +211,18 @@ export class AmbassadorService {
     ] = await Promise.all([
       supabase
         .from('ambassador_profiles')
-        .select('id', { count: 'exact', head: true }),
+        .select('id', { count: 'exact', head: true })
+        .is('deleted_at', null),
       supabase
         .from('ambassador_profiles')
         .select('id', { count: 'exact', head: true })
-        .eq('verification_status', 'unverified'),
+        .eq('verification_status', 'unverified')
+        .is('deleted_at', null),
       supabase
         .from('ambassador_profiles')
         .select('id', { count: 'exact', head: true })
-        .eq('verification_status', 'pending'),
+        .eq('verification_status', 'pending')
+        .is('deleted_at', null),
       supabase
         .from('withdrawals')
         .select('amount_ngn')
@@ -300,11 +303,13 @@ export class AmbassadorService {
       supabase
         .from('ambassador_profiles')
         .select(ADMIN_LIST_SELECT)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1),
       supabase
         .from('ambassador_profiles')
-        .select('id', { count: 'exact', head: true }),
+        .select('id', { count: 'exact', head: true })
+        .is('deleted_at', null),
     ]);
 
     if (listResult.error) {
@@ -807,6 +812,81 @@ export class AmbassadorService {
       return 'An account with this email already exists. Please log in.';
     }
     return `Registration failed: ${message}`;
+  }
+
+  /**
+   * Soft-deletes (deactivates) an ambassador by their ambassador_profiles id.
+   * Sets is_active=false + deleted_at on the linked public.users row and stamps
+   * deleted_at + clears is_approved on the ambassador_profiles row. The Supabase
+   * auth user is banned so the account can no longer sign in. Super-admin only;
+   * the idempotent update leaves an already-deactivated record untouched.
+   */
+  async deactivateAmbassador(profileId: string) {
+    const { data: profile, error: fetchError } = await supabase
+      .from('ambassador_profiles')
+      .select('id, user_id')
+      .eq('id', profileId)
+      .maybeSingle();
+
+    if (fetchError) {
+      throw new HttpError(
+        500,
+        `Failed to fetch ambassador profile: ${fetchError.message}`,
+      );
+    }
+    if (!profile) {
+      throw new HttpError(404, 'Ambassador profile not found');
+    }
+
+    const now = new Date().toISOString();
+
+    const { error: userError } = await supabase
+      .from('users')
+      .update({ is_active: false, deleted_at: now })
+      .eq('id', profile.user_id);
+
+    if (userError) {
+      throw new HttpError(
+        500,
+        `Failed to deactivate user: ${userError.message}`,
+      );
+    }
+
+    const { data, error: profileError } = await supabase
+      .from('ambassador_profiles')
+      .update({ is_approved: false, deleted_at: now })
+      .eq('id', profileId)
+      .select(PROFILE_SELECT)
+      .single();
+
+    if (profileError) {
+      throw new HttpError(
+        500,
+        `Failed to deactivate ambassador: ${profileError.message}`,
+      );
+    }
+
+    await this.banAuthUser(profile.user_id);
+
+    return { profile: data, deactivatedAt: now };
+  }
+
+  /**
+   * Bans a Supabase auth user (effectively disabling sign-in) without deleting
+   * the auth record. Uses a very long ban duration so the account stays locked
+   * until explicitly unbanned. Failures are surfaced but never block the
+   * database-level deactivation that already happened.
+   */
+  private async banAuthUser(userId: string) {
+    const { error } = await supabase.auth.admin.updateUserById(userId, {
+      ban_duration: '876000h',
+    });
+    if (error) {
+      throw new HttpError(
+        500,
+        `Failed to disable auth sign-in: ${error.message}`,
+      );
+    }
   }
 }
 

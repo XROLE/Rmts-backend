@@ -3,9 +3,11 @@ import multer from 'multer';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
+import { requireSuperAdmin } from '../middleware/requireSuperAdmin.js';
 import {
   changeAmbassadorPasswordSchema,
   confirmAmbassadorApprovalSchema,
+  deleteAmbassadorSchema,
   getAllAmbassadorsSchema,
   getAmbassadorPayoutsSchema,
   loginAmbassadorSchema,
@@ -18,6 +20,7 @@ import {
 import {
   changeAmbassadorPassword,
   confirmAmbassadorApproval,
+  deleteAmbassador,
   getAllAmbassadors,
   getAmbassadorBanks,
   getAmbassadorPayouts,
@@ -85,6 +88,14 @@ router.patch(
   requireAdmin,
   validate(confirmAmbassadorApprovalSchema),
   confirmAmbassadorApproval,
+);
+// Super-admin-only: soft-delete (deactivate) an ambassador by profile id.
+router.delete(
+  '/:id',
+  requireAuth,
+  requireSuperAdmin,
+  validate(deleteAmbassadorSchema),
+  deleteAmbassador,
 );
 router.patch(
   '/me',

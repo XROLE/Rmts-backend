@@ -2,6 +2,7 @@ import { Router } from 'express';
 import authRoutes from './auth.routes.js';
 import profileRoutes from './profile.routes.js';
 import ambassadorRoutes from './ambassador.routes.js';
+import userRoutes from './users.routes.js';
 import verificationRoutes from './verification.routes.js';
 import supportRoutes from './support.routes.js';
 import paymentRoutes from './payment.routes.js';
@@ -19,6 +20,7 @@ router.get('/health', (_req, res) => {
 router.use('/auth', authRoutes);
 router.use('/profiles', profileRoutes);
 router.use('/ambassadors', ambassadorRoutes);
+router.use('/users', userRoutes);
 router.use('/verification', verificationRoutes);
 router.use('/support', supportRoutes);
 router.use('/payments', paymentRoutes);
