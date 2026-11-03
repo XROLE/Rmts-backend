@@ -209,3 +209,15 @@ export const refreshAmbassadorToken = asyncHandler(
     });
   },
 );
+
+export const deleteAmbassador = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+    const result = await ambassadorService.deactivateAmbassador(id);
+    res.status(200).json({
+      success: true,
+      message: 'Ambassador deactivated successfully',
+      data: result,
+    });
+  },
+);

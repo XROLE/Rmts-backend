@@ -260,3 +260,15 @@ export type SearchProfilesInput = z.infer<
 export type UpdateProfileStatusInput = z.infer<
   typeof updateProfileStatusSchema
 >;
+
+/**
+ * DELETE /profiles/:id — super-admin soft-deletes (deactivates) a roommate
+ * profile by its primary id.
+ */
+export const deleteProfileSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('A valid profile id (uuid) is required'),
+  }),
+});
+
+export type DeleteProfileInput = z.infer<typeof deleteProfileSchema>['params'];

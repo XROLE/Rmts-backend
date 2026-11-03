@@ -5,6 +5,7 @@ import {
   normalizeAnyPhoneToE164,
   phoneLookupVariants,
 } from '../utils/normalizePhone.js';
+import { userService } from './user.service.js';
 
 /**
  * Lifecycle states in which a request can no longer be edited by the user.
@@ -439,11 +440,13 @@ export class ProfileService {
       supabase
         .from('roommate_profiles')
         .select(select)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1),
       supabase
         .from('roommate_profiles')
-        .select('id', { count: 'exact', head: true }),
+        .select('id', { count: 'exact', head: true })
+        .is('deleted_at', null),
     ]);
 
     if (listResult.error) {
@@ -532,6 +535,80 @@ export class ProfileService {
     if (error) {
       console.error('Failed to increment referral count:', error.message);
     }
+  }
+
+  /**
+   * Soft-deletes (deactivates) a roommate profile by its id.
+   *
+   * If the profile is linked to a user account (public.users + auth), it
+   * delegates to the shared user deactivation, which sets is_active=false +
+   * deleted_at on public.users, cascades to any linked ambassador_profiles,
+   * stamps deleted_at on this roommate profile, and bans the Supabase auth
+   * user.
+   *
+   * Self-service roommate registrations have no linked user account
+   * (roommate_profiles.user_id is NULL). For those we deactivate the profile
+   * directly and skip the user/ban steps, since there is no account to touch.
+   *
+   * `actorId` is the id of the authenticated super admin performing the action.
+   */
+  async deactivateRoommate(profileId: string, actorId: string) {
+    const { data: profile, error: fetchError } = await supabase
+      .from('roommate_profiles')
+      .select('id, user_id')
+      .eq('id', profileId)
+      .maybeSingle();
+
+    if (fetchError) {
+      throw new HttpError(
+        500,
+        `Failed to fetch roommate profile: ${fetchError.message}`,
+      );
+    }
+    if (!profile) {
+      throw new HttpError(404, 'Roommate profile not found');
+    }
+
+    let user: Awaited<ReturnType<typeof userService.deactivateUser>>['user'] | null = null;
+    let deactivatedAt: string;
+
+    if (profile.user_id) {
+      const result = await userService.deactivateUser(profile.user_id, actorId);
+      user = result.user;
+      deactivatedAt = result.deactivatedAt;
+    } else {
+      deactivatedAt = new Date().toISOString();
+      const { error: updateError } = await supabase
+        .from('roommate_profiles')
+        .update({ is_active: false, deleted_at: deactivatedAt })
+        .eq('id', profileId);
+
+      if (updateError) {
+        throw new HttpError(
+          500,
+          `Failed to deactivate roommate profile: ${updateError.message}`,
+        );
+      }
+    }
+
+    const { data: updatedProfile, error: refetchError } = await supabase
+      .from('roommate_profiles')
+      .select(EDITABLE_SELECT)
+      .eq('id', profileId)
+      .maybeSingle();
+
+    if (refetchError) {
+      throw new HttpError(
+        500,
+        `Failed to fetch updated profile: ${refetchError.message}`,
+      );
+    }
+
+    return {
+      user,
+      profile: updatedProfile,
+      deactivatedAt,
+    };
   }
 }
 

@@ -473,18 +473,21 @@ export class WhatsAppLifecycleService {
       | 'rematch',
     opts: { sendTemplate: boolean },
   ): Promise<boolean> {
-    // Active and paid are the only statuses whose WhatsApp template send is
-    // gated by the caller's `sendTemplate` flag. Paused/suspended keep their
-    // existing always-send behavior; the remaining lifecycle states
+    // Active and paid send their notification template by default, matching
+    // the always-send behavior of paused/suspended. `sendTemplate === false`
+    // is the only explicit opt-out; the env master flags
+    // (WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_ENABLED /
+    // WHATSAPP_PROFILE_REACTIVATED_TEMPLATE_ENABLED) remain a global
+    // kill-switch. The remaining lifecycle states
     // (matched/pending_payment/rematch) have no template.
     if (status === 'paid') {
-      if (opts.sendTemplate) {
+      if (opts.sendTemplate !== false) {
         return sidoBotService.notifyPaymentConfirmation(input);
       }
       return false;
     }
     if (status === 'active') {
-      if (opts.sendTemplate) {
+      if (opts.sendTemplate !== false) {
         return sidoBotService.notifyProfileReactivated(input);
       }
       return false;
@@ -2487,6 +2490,7 @@ export class WhatsAppLifecycleService {
       .from('roommate_profiles')
       .select('id')
       .in('phone_number', variants)
+      .order('updated_at', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
