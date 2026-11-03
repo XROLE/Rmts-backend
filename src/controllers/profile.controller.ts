@@ -166,3 +166,15 @@ export const searchProfiles = asyncHandler(
     });
   },
 );
+
+export const deleteRoommateProfile = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+    const result = await profileService.deactivateRoommate(id, req.user!.id);
+    res.status(200).json({
+      success: true,
+      message: 'Roommate profile deactivated successfully',
+      data: result,
+    });
+  },
+);

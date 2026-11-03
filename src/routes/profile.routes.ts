@@ -2,8 +2,10 @@ import { Router } from 'express';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
+import { requireSuperAdmin } from '../middleware/requireSuperAdmin.js';
 import {
   createProfileSchema,
+  deleteProfileSchema,
   getAllUsersSchema,
   getProfileByLookupSchema,
   searchProfilesSchema,
@@ -12,6 +14,7 @@ import {
 } from '../schemas/profile.schema.js';
 import {
   createProfile,
+  deleteRoommateProfile,
   getAllUsers,
   getProfileByLookup,
   getProfileStats,
@@ -41,6 +44,15 @@ router.patch(
   requireAdmin,
   validate(updateProfileStatusSchema),
   updateProfileStatus,
+);
+
+// Super-admin-only: soft-delete (deactivate) a roommate profile by id.
+router.delete(
+  '/:id',
+  requireAuth,
+  requireSuperAdmin,
+  validate(deleteProfileSchema),
+  deleteRoommateProfile,
 );
 
 // Admin-only: dashboard profile lifecycle metrics.

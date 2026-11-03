@@ -5,6 +5,7 @@ import {
   normalizeAnyPhoneToE164,
   phoneLookupVariants,
 } from '../utils/normalizePhone.js';
+import { userService } from './user.service.js';
 
 /**
  * Lifecycle states in which a request can no longer be edited by the user.
@@ -439,11 +440,13 @@ export class ProfileService {
       supabase
         .from('roommate_profiles')
         .select(select)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1),
       supabase
         .from('roommate_profiles')
-        .select('id', { count: 'exact', head: true }),
+        .select('id', { count: 'exact', head: true })
+        .is('deleted_at', null),
     ]);
 
     if (listResult.error) {
@@ -532,6 +535,52 @@ export class ProfileService {
     if (error) {
       console.error('Failed to increment referral count:', error.message);
     }
+  }
+
+  /**
+   * Soft-deletes (deactivates) a roommate profile by its id. Resolves the
+   * linked user and delegates to the shared user deactivation, which sets
+   * is_active=false + deleted_at on public.users, cascades to any linked
+   * ambassador_profiles, stamps deleted_at on this roommate profile, and bans
+   * the Supabase auth user. `actorId` is the authenticated super admin.
+   */
+  async deactivateRoommate(profileId: string, actorId: string) {
+    const { data: profile, error: fetchError } = await supabase
+      .from('roommate_profiles')
+      .select('id, user_id')
+      .eq('id', profileId)
+      .maybeSingle();
+
+    if (fetchError) {
+      throw new HttpError(
+        500,
+        `Failed to fetch roommate profile: ${fetchError.message}`,
+      );
+    }
+    if (!profile) {
+      throw new HttpError(404, 'Roommate profile not found');
+    }
+
+    const result = await userService.deactivateUser(profile.user_id, actorId);
+
+    const { data: updatedProfile, error: refetchError } = await supabase
+      .from('roommate_profiles')
+      .select(EDITABLE_SELECT)
+      .eq('id', profileId)
+      .maybeSingle();
+
+    if (refetchError) {
+      throw new HttpError(
+        500,
+        `Failed to fetch updated profile: ${refetchError.message}`,
+      );
+    }
+
+    return {
+      user: result.user,
+      profile: updatedProfile,
+      deactivatedAt: result.deactivatedAt,
+    };
   }
 }
 

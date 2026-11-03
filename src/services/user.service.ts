@@ -66,7 +66,7 @@ export class UserService {
     // Take any linked roommate profile out of the matching pool.
     const { error: roommateError } = await supabase
       .from('roommate_profiles')
-      .update({ is_active: false })
+      .update({ is_active: false, deleted_at: now })
       .eq('user_id', userId);
 
     if (roommateError) {
