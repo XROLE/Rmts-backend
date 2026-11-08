@@ -10,6 +10,7 @@ import matchRoutes from './match.routes.js';
 import whatsappRoutes from './whatsapp.routes.js';
 import jobRoutes from './job.routes.js';
 import monthlyRequestRoutes from './monthlyRequest.routes.js';
+import fairnestRoutes from './fairnest.routes.js';
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use('/matches', matchRoutes);
 router.use('/whatsapp', whatsappRoutes);
 router.use('/jobs', jobRoutes);
 router.use('/monthly-requests', monthlyRequestRoutes);
+router.use('/fairnest', fairnestRoutes);
 
 export default router;

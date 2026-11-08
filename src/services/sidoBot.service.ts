@@ -281,21 +281,49 @@ ${status}`;
     }
 
     if (toolName === 'request_payment_link') {
+      // Resolve which fee type the user wants. The model is instructed to always
+      // pass 'type'; if it didn't (or passed something unknown), ask the user to
+      // clarify rather than guessing which payment link to generate.
+      let feeType: 'matching' | 'rental_registration' | undefined;
       try {
-        await whatsappLifecycleService.issueStandaloneServiceFeeLink(phoneE164, name);
+        const parsed = JSON.parse(argsJson ?? '{}') as { type?: unknown };
+        const raw = String(parsed.type ?? '').trim();
+        if (raw === 'shared_apartment_matching_fee') feeType = 'matching';
+        else if (raw === 'rental_registration_fee') feeType = 'rental_registration';
+      } catch {
+        // keep feeType undefined
+      }
+
+      if (!feeType) {
+        const clarify =
+          "Sure! Just to be sure — which payment link would you like me to generate? 🤔\n\n" +
+          '1️⃣ *Shared Apartment matching fee* — the one-time ₦2,750 roommate/flatmate matching service fee.\n' +
+          '2️⃣ *Property rental service registration fee* — the one-time ₦30,000 registration fee (40% off ₦50,000) needed to activate your rental-service account.\n\n' +
+          'Reply with 1 or 2 and I’ll send the right link 👍';
+        await whatsappService.sendText(phoneE164, clarify);
+        await this.logMessage(phoneE164, 'assistant', clarify);
+        return clarify;
+      }
+
+      try {
+        await whatsappLifecycleService.issueStandaloneServiceFeeLink(phoneE164, name, feeType);
+        const label =
+          feeType === 'rental_registration'
+            ? 'rental-service registration-fee'
+            : 'service-fee';
         await this.logMessage(
           phoneE164,
           'assistant',
-          'Sent the service-fee payment link (Paystack CTA).',
+          `Sent the ${label} payment link (Paystack CTA).`,
         );
       } catch (err) {
-        console.error('[sido] failed to issue service-fee link:', err);
+        console.error('[sido] failed to issue payment link:', err);
         const fallback =
           "Sorry, I couldn't generate your payment link just now 🙈 Please try again in a moment, or type 'talk to human' for help.";
         await whatsappService.sendText(phoneE164, fallback);
         await this.logMessage(phoneE164, 'assistant', fallback);
       }
-      return "Your service-fee payment link is ready 👆 Tap 'Pay now' on the button above to complete payment. Once paid, you'll get a receipt by email and your account will be activated. Need help? Just type 'talk to human'.";
+      return "Your payment link is ready 👆 Tap 'Pay now' on the button above to complete payment. Once paid, you'll get a receipt by email and your account will be activated. Need help? Just type 'talk to human'.";
     }
 
     if (toolName === 'request_human_handover') {

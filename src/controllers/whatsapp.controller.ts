@@ -8,6 +8,8 @@ import {
   MATCH_DECLINE_PAYLOAD,
   MONTHLY_PROCEED_PAYLOAD,
   MONTHLY_DECLINE_PAYLOAD,
+  FAIRNEST_RENT_PROCEED_PAYLOAD,
+  FAIRNEST_RENT_DECLINE_PAYLOAD,
   type TriggerMatchInput,
 } from '../services/whatsappLifecycle.service.js';
 import { sidoBotService } from '../services/sidoBot.service.js';
@@ -217,6 +219,35 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
               payload,
             );
             console.log(`[whatsapp] monthly button from ${phoneE164} ->`, result);
+          } else if (
+            payload === FAIRNEST_RENT_PROCEED_PAYLOAD ||
+            payload === FAIRNEST_RENT_DECLINE_PAYLOAD
+          ) {
+            // welcome_rentals buttons: Continue -> activation + Sido sends the
+            // registration-fee next step; Decline -> mark rental profile inactive.
+            const result = await whatsappLifecycleService.handleFairnestRentWelcomeButtonReply(
+              phoneE164,
+              buttonText,
+              payload,
+            );
+            console.log(`[whatsapp] fairnest rent welcome button from ${phoneE164} ->`, result);
+
+            if (sidoBotService.enabled && result?.handled) {
+              const context =
+                result.outcome === 'confirmed'
+                  ? "The user just tapped 'Continue' on the welcome_rentals template. They are a FairNest rental-service user and their profile is now active. This was the FIRST step — the REQUIRED NEXT STEP for their activation to take place is to pay the one-time Property rental service registration fee of ₦30,000 (a 40% discount off the standard ₦50,000 registration fee). Explain clearly and warmly that paying this fee is the next step needed for their activation to be completed, then call the request_payment_link tool with type 'rental_registration_fee' to send the payment link."
+                  : result.outcome === 'declined'
+                    ? "The user just tapped 'Decline' on the welcome_rentals template. Their rental-service profile was marked inactive so they will not be matched or contacted. Acknowledge politely and let them know they can start again anytime."
+                    : undefined;
+
+              if (context) {
+                void sidoBotService
+                  .handleInboundText(phoneE164, contactName, buttonText, context)
+                  .catch((err) =>
+                    console.error('[whatsapp] sido bot failed after rent welcome button:', err),
+                  );
+              }
+            }
           } else {
             // Welcome template buttons (welcome_to_roommate_ng): confirm/decline.
             const result = await whatsappLifecycleService.handleWelcomeButtonReply(

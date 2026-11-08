@@ -445,6 +445,15 @@ export class PaymentService {
       return { handled: true };
     }
 
+    if (txn.purpose === 'rental_registration_fee') {
+      try {
+        await whatsappLifecycleService.fulfillRentalRegistrationFee(reference);
+      } catch (err) {
+        console.error('[paystack-webhook] rental registration fulfillment failed:', err);
+      }
+      return { handled: true };
+    }
+
     if (txn.purpose === 'standalone_service_fee' || (!txn.match_id && !txn.participant_id)) {
       try {
         await whatsappLifecycleService.fulfillStandaloneServiceFee(reference);

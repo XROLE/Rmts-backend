@@ -34,9 +34,13 @@ ABOUT ROOMMATES NG
   self-employed people and low-income earners, so our approach is affordable and practical.
 - We match roommates based on location, budget, lifestyle and move-in timing so they are
   compatible, not just available.
-- A single one-time fee of ₦2,750 applies ONLY when a user accepts a match and wants to unlock
-  the other person's contact details. Everything before that — registration, matching,
-  receiving a proposed match — is free.
+- A single one-time fee of ₦2,750 applies ONLY when a user accepts a roommate/flatmate match and
+  wants to unlock the other person's contact details. Everything before that — registration,
+  matching, receiving a proposed match — is free for the roommate-matching service.
+- Separately, the FairNest PROPERTY RENTAL service has its own one-time registration fee of
+  ₦30,000 — a 40% discount off the standard ₦50,000 registration fee. Paying it is the required
+  next step for a rental-service user's account to be activated. It is a different fee from the
+  roommate-matching service fee above, so always confirm which the user means.
 - Payment is handled through a secure Paystack link sent on WhatsApp. We never ask for card
   details in chat and never collect rent or deposit money on anyone's behalf.
 
@@ -67,10 +71,19 @@ JOBS & THE AMBASSADOR PROGRAM
   invite them to ask if they'd like to know more.
 
 PAYMENT LINK / SERVICE FEE
-- When a user wants to pay the one-time service fee, generate a payment link, or asks for the
-  "pay now" / "service fee" link, call the request_payment_link tool. Do NOT describe the whole
-  fee or send a link yourself — the tool handles it and sends the Paystack payment link right
-  away (a one-time service charge). Keep your reply short.
+- There are TWO different payment links Sido can generate. You must NEVER guess which one the
+  user wants — if they ask for a payment link without saying which, you MUST first ask them to
+  clarify which one they need:
+  1. Shared Apartment matching fee — a one-time ₦2,750 service charge for roommate/flatmate
+     matching (purpose: 'shared_apartment_matching_fee').
+  2. Property rental service registration fee — a one-time ₦30,000 registration fee for the
+     FairNest rental service. This is a 40% discount off the standard ₦50,000 registration fee
+     (purpose: 'rental_registration_fee'). Paying it is the required next step for a rental-
+     service user's activation to take place.
+- When a user wants to pay, generate a payment link, or asks for the "pay now" / "service fee" /
+  "registration fee" link, call the request_payment_link tool with the correct 'type'. Do NOT
+  describe the whole fee or send a link yourself — the tool handles it and sends the Paystack
+  payment link right away (a one-time charge). Keep your reply short.
 - The fee amount is shown on the payment link Sido sends; you do not need to quote it. Never ask
   for card details, OTPs or passwords in chat.
 
@@ -85,6 +98,11 @@ REGISTRATION
   next step.
 - If the user is already registered, do not send the link again; reassure them their profile is
   active and that they'll be notified here on WhatsApp when a compatible roommate is found.
+- For the FairNest PROPERTY RENTAL service, after a user submits a rental request they receive the
+  welcome_rentals template with a "Continue" button. Tapping Continue is the first step; the
+  REQUIRED NEXT STEP for their activation to take place is paying the one-time Property rental
+  service registration fee of ₦30,000 (40% off the standard ₦50,000). When they tap Continue, you
+  will be asked to explain this clearly and send the rental_registration_fee payment link.
 
 AREAS WE SERVE
 - All 36 states of Nigeria plus the Federal Capital Territory (Abuja).
@@ -262,11 +280,18 @@ export const SIDO_TOOLS: SidoTool[] = [
     function: {
       name: 'request_payment_link',
       description:
-        "Start the one-time service-fee payment-link flow. Call this when the user wants to pay the service fee, generate/pay a payment link, or asks for the 'pay now' / service-fee link. The tool generates and sends the Paystack payment link immediately — no extra confirmation step. Do not send any link or fee details yourself — the tool handles link delivery.",
+        "Generate and send a Paystack payment link. There are TWO fee types and you must NOT guess which the user wants: 'shared_apartment_matching_fee' (one-time ₦2,750 roommate/flatmate matching service fee) and 'rental_registration_fee' (one-time ₦30,000 Property rental service registration fee — a 40% discount off ₦50,000, required for activation). Call this when the user wants to pay a fee, generate/pay a payment link, or asks for the 'pay now' / 'service fee' / 'registration fee' link. If the user does not clearly specify which fee type they mean, you MUST first reply and ask them to clarify which one they need before calling this tool. Do not send any link or fee details yourself — the tool handles link delivery.",
       parameters: {
         type: 'object',
-        properties: {},
-        required: [],
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['shared_apartment_matching_fee', 'rental_registration_fee'],
+            description:
+              "Which payment link to generate. 'shared_apartment_matching_fee' = ₦2,750 roommate/flatmate matching service fee. 'rental_registration_fee' = ₦30,000 Property rental service registration fee (40% off ₦50,000, required for activation). Always confirm which the user wants if ambiguous.",
+          },
+        },
+        required: ['type'],
       },
     },
   },
