@@ -87,9 +87,41 @@ const MONTHLY_FEE_AMOUNT_NGN = MATCH_PAYMENT_AMOUNT_NGN;
 const FAIRNEST_RENT_WELCOME_TEMPLATE_NAME =
   process.env.WHATSAPP_FAIRNEST_RENT_WELCOME_TEMPLATE_NAME ?? 'welcome_rentals';
 const FAIRNEST_RENT_WELCOME_TEMPLATE_LANG =
-  process.env.WHATSAPP_FAIRNEST_RENT_WELCOME_TEMPLATE_LANG ?? 'en_US';
+  process.env.WHATSAPP_FAIRNEST_RENT_WELCOME_TEMPLATE_LANG ?? 'en';
 const FAIRNEST_RENT_WELCOME_TEMPLATE_ENABLED =
   process.env.WHATSAPP_FAIRNEST_RENT_WELCOME_TEMPLATE_ENABLED !== 'false';
+/** Quick-reply payloads echoed back on the welcome_rentals template buttons. */
+export const FAIRNEST_RENT_PROCEED_PAYLOAD = 'Continue';
+export const FAIRNEST_RENT_DECLINE_PAYLOAD = 'Decline';
+
+/**
+ * Property rental service registration fee. The standard registration fee is
+ * ₦50,000; rental-service users are offered a 40% discount, so the amount they
+ * actually pay is ₦30,000. Both figures are surfaced in Sido's messaging.
+ */
+const RENTAL_REGISTRATION_FEE_STANDARD_NGN = Number(
+  process.env.RENTAL_REGISTRATION_FEE_STANDARD_NGN ?? 50000,
+);
+const RENTAL_REGISTRATION_DISCOUNT_PCT = Number(
+  process.env.RENTAL_REGISTRATION_DISCOUNT_PCT ?? 40,
+);
+const RENTAL_REGISTRATION_FEE_AMOUNT_NGN =
+  Math.round(
+    RENTAL_REGISTRATION_FEE_STANDARD_NGN *
+      (1 - RENTAL_REGISTRATION_DISCOUNT_PCT / 100),
+  );
+
+const RENTAL_REGISTRATION_FEE_PITCH_TEXT =
+  `This is the one-time Property rental service registration fee of ${naira(
+    RENTAL_REGISTRATION_FEE_AMOUNT_NGN,
+  )} — a 40% discount off the standard ${naira(
+    RENTAL_REGISTRATION_FEE_STANDARD_NGN,
+  )} registration fee.\n\n` +
+  'Paying this fee is the required next step for your FairNest Housing rental-service account to be activated. Your fee covers:\n' +
+  '• Listing and matching against verified rental spaces across Nigeria\n' +
+  '• 24hr personal AI-assisted support on WhatsApp\n' +
+  '• Security tips to help you spot a fishy listing and stay safe\n\n' +
+  'Please note: the fee is non-refundable. Once paid, your rental-service account is activated and our team will reach out with your next steps.';
 
 const MATCH_NO_BIO_FALLBACK =
   'User did not upload bio at this point, you can speak more with the user to find out the kind of person he is before agreeing to live together';
@@ -563,6 +595,68 @@ export class WhatsAppLifecycleService {
     }
 
     console.warn('[whatsapp] unrecognized welcome button payload:', payload);
+    return { handled: true };
+  }
+
+  /**
+   * Handles a quick-reply button press on the welcome_rentals template.
+   *   Continue -> the FairNest rental-service profile is marked active and Sido
+   *               is asked to send the registration-fee (activation) next step
+   *   Decline  -> the rental-service profile is marked inactive
+   * Both updates are idempotent — repeats are acknowledged without re-writing.
+   */
+  async handleFairnestRentWelcomeButtonReply(
+    fromPhone: string,
+    _buttonText: string,
+    payload: string,
+  ): Promise<{
+    handled: boolean;
+    outcome?: 'confirmed' | 'declined';
+  }> {
+    const phoneE164 = normalizePhoneToE164(fromPhone) ?? normalizeAnyPhoneToE164(fromPhone);
+    if (!phoneE164) return { handled: false };
+
+    const variants = phoneLookupVariants(phoneE164);
+    const { data: profile } = await supabase
+      .from('fairnest_rent_profiles')
+      .select('id, is_active')
+      .in('phone_number', variants)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!profile) {
+      console.warn('[whatsapp] fairnest rent welcome button replied but no profile found', {
+        fromPhone,
+        payload,
+      });
+      return { handled: false };
+    }
+
+    if (payload === FAIRNEST_RENT_PROCEED_PAYLOAD) {
+      if (profile.is_active) return { handled: true, outcome: 'confirmed' };
+      const { error } = await supabase
+        .from('fairnest_rent_profiles')
+        .update({ is_active: true, status: 'active' })
+        .eq('id', profile.id);
+      if (error) {
+        console.error('[whatsapp] failed to activate fairnest rent profile:', error.message);
+      }
+      return { handled: true, outcome: 'confirmed' };
+    }
+
+    if (payload === FAIRNEST_RENT_DECLINE_PAYLOAD) {
+      const { error } = await supabase
+        .from('fairnest_rent_profiles')
+        .update({ is_active: false, status: 'inactive' })
+        .eq('id', profile.id);
+      if (error) {
+        console.error('[whatsapp] failed to decline fairnest rent profile:', error.message);
+      }
+      return { handled: true, outcome: 'declined' };
+    }
+
+    console.warn('[whatsapp] unrecognized fairnest rent welcome button payload:', payload);
     return { handled: true };
   }
 
@@ -1379,7 +1473,18 @@ export class WhatsAppLifecycleService {
    * (handleRoommateChargeSuccess -> fulfillStandaloneServiceFee) performs the
    * post-payment side effects.
    */
-  async issueStandaloneServiceFeeLink(phoneE164: string, name?: string): Promise<void> {
+  /**
+   * Generates a Paystack payment link for a fee Sido can trigger directly:
+   *   - 'matching' (default): the one-time Shared Apartment matching fee
+   *     (₦2,750, purpose 'standalone_service_fee') — unchanged behaviour.
+   *   - 'rental_registration': the Property rental service registration fee
+   *     (₦30,000, purpose 'rental_registration_fee').
+   */
+  async issueStandaloneServiceFeeLink(
+    phoneE164: string,
+    name?: string,
+    feeType: 'matching' | 'rental_registration' = 'matching',
+  ): Promise<void> {
     const phone =
       normalizePhoneToE164(phoneE164) ??
       normalizeAnyPhoneToE164(phoneE164) ??
@@ -1388,28 +1493,54 @@ export class WhatsAppLifecycleService {
     await this.ensureUser(phone, name);
 
     const variants = phoneLookupVariants(phone);
-    const { data: profile } = await supabase
-      .from('roommate_profiles')
-      .select('full_name, email')
-      .in('phone_number', variants)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    let email: string | null = null;
+    let displayName: string | undefined = name;
 
-    const email = profile?.email ?? syntheticEmail(phone);
-    const displayName = profile?.full_name ?? name ?? 'there';
+    if (feeType === 'rental_registration') {
+      const { data: rentProfile } = await supabase
+        .from('fairnest_rent_profiles')
+        .select('full_name, email')
+        .in('phone_number', variants)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      email = rentProfile?.email ?? null;
+      displayName = rentProfile?.full_name ?? name;
+    } else {
+      const { data: profile } = await supabase
+        .from('roommate_profiles')
+        .select('full_name, email')
+        .in('phone_number', variants)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      email = profile?.email ?? null;
+      displayName = profile?.full_name ?? name;
+    }
 
-    const amountNg = MATCH_PAYMENT_AMOUNT_NGN;
+    const resolvedEmail = email ?? syntheticEmail(phone);
+    const resolvedName = displayName ?? 'there';
+
+    const isRental = feeType === 'rental_registration';
+    const amountNg = isRental ? RENTAL_REGISTRATION_FEE_AMOUNT_NGN : MATCH_PAYMENT_AMOUNT_NGN;
+    const purpose = isRental ? 'rental_registration_fee' : 'standalone_service_fee';
+    const pitchText = isRental ? RENTAL_REGISTRATION_FEE_PITCH_TEXT : STANDALONE_FEE_PITCH_TEXT;
+    const ctaHeader = isRental ? 'Pay registration fee 🏠' : 'Pay service fee 🏠';
+    const ctaBody = isRental
+      ? 'Tap below to pay the one-time Property rental service registration fee and activate your FairNest Housing account.'
+      : 'Tap below to pay the one-time service charge and activate your FairNest Housing account.';
+
     const reference = randomUUID();
     const initialized = await paystackService.initializePayment({
       amountKobo: Math.round(amountNg * 100),
-      email,
+      email: resolvedEmail,
       reference,
       callbackUrl: PAYMENT_RETURN_URL,
       metadata: {
-        purpose: 'standalone_service_fee',
+        purpose,
         phone,
-        name: displayName,
+        name: resolvedName,
+        fee_type: feeType,
       },
     });
 
@@ -1418,19 +1549,19 @@ export class WhatsAppLifecycleService {
       user_phone: phone,
       amount: amountNg,
       status: 'PENDING',
-      purpose: 'standalone_service_fee',
+      purpose,
     });
     if (txnError) {
       throw new HttpError(500, `Failed to record service-fee transaction: ${txnError.message}`);
     }
 
-    await whatsappService.sendText(phone, STANDALONE_FEE_PITCH_TEXT);
+    await whatsappService.sendText(phone, pitchText);
     await whatsappService.sendCtaUrlButton({
       to: phone,
       displayText: `Pay ${naira(amountNg)} now`,
       url: initialized.authorizationUrl,
-      header: 'Pay service fee 🏠',
-      body: 'Tap below to pay the one-time service charge and activate your FairNest Housing account.',
+      header: ctaHeader,
+      body: ctaBody,
     });
   }
 
@@ -1516,6 +1647,83 @@ export class WhatsAppLifecycleService {
         `If things do not work out, you can request a replacement match any time via ${getReplacementFormBaseUrl()}?phone=${phone}`,
         '',
         'Please note: replacement matches are an optional courtesy capped at operational limits — they are not an absolute legal right.',
+      ].join('\n'),
+    );
+  }
+
+  /**
+   * Post-payment fulfillment for a rental-registration-fee transaction created
+   * via issueStandaloneServiceFeeLink(..., 'rental_registration'). Marks the
+   * FairNest rental-service profile paid + active, emails a receipt (user) and
+   * a notification (company), and sends the WhatsApp activation confirmation +
+   * safety tips.
+   */
+  async fulfillRentalRegistrationFee(reference: string): Promise<void> {
+    const { data: txn, error: txnError } = await supabase
+      .from('transactions')
+      .select('reference, user_phone, amount')
+      .eq('reference', reference)
+      .maybeSingle();
+
+    if (txnError || !txn) {
+      console.error('[whatsapp] rental registration fulfillment: transaction not found', reference);
+      return;
+    }
+
+    const phone = txn.user_phone as string;
+    const amountNg = Number(txn.amount ?? 0);
+
+    const variants = phoneLookupVariants(phone);
+    const { data: profile } = await supabase
+      .from('fairnest_rent_profiles')
+      .select('id, full_name, email')
+      .in('phone_number', variants)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const name = profile?.full_name ?? 'there';
+    const email = profile?.email ?? syntheticEmail(phone);
+
+    // Mark the rental-service profile paid + active.
+    if (profile?.id) {
+      const { error: statusError } = await supabase
+        .from('fairnest_rent_profiles')
+        .update({ status: 'paid', is_active: true })
+        .eq('id', profile.id);
+      if (statusError) {
+        console.error('[whatsapp] failed to mark rental profile paid:', statusError.message);
+      }
+    }
+
+    // Emails to both the user and the company.
+    try {
+      await emailService.sendServiceFeeReceipt({ to: email, name, amountNg, reference });
+    } catch (err) {
+      console.error('[whatsapp] failed to send rental registration receipt:', err);
+    }
+    try {
+      await emailService.sendServiceFeeNotification({ name, phone, amountNg, reference });
+    } catch (err) {
+      console.error('[whatsapp] failed to send rental registration notification:', err);
+    }
+
+    // WhatsApp activation confirmation + safety tips.
+    await whatsappService.sendText(
+      phone,
+      '🎉 Payment confirmed! Your FairNest Housing rental-service account is now active. This was the final step for your activation to take place — our team will reach out on WhatsApp with your next steps shortly.',
+    );
+    await whatsappService.sendText(
+      phone,
+      [
+        "🛡️ *Sido's safety squad — quick wins before you rent:*",
+        '1. Do a video call / virtual tour first — a landlord who refuses is a red flag 🚩',
+        '2. Inspect the property in daylight and bring a friend along.',
+        '3. Sign a tenancy/sublet agreement before paying any holding deposit.',
+        '4. Never pay via wire transfer, gift cards, or untraceable channels.',
+        '5. A price way below the market rate is usually a phantom listing — be careful.',
+        '',
+        'FairNest Housing never collects rent, deposits or inspection fees on behalf of anyone.',
       ].join('\n'),
     );
   }
