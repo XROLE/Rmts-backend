@@ -81,6 +81,16 @@ export const MONTHLY_DECLINE_PAYLOAD = 'monthly_decline';
 /** Matching fee charged when a monthly request user taps "Proceed". */
 const MONTHLY_FEE_AMOUNT_NGN = MATCH_PAYMENT_AMOUNT_NGN;
 
+/** Template welcoming a freshly created FairNest rent request. Carries four
+ * body params (name, property type, location(s), budget range) and two
+ * quick-reply buttons (Continue / Decline) whose titles must match exactly. */
+const FAIRNEST_RENT_WELCOME_TEMPLATE_NAME =
+  process.env.WHATSAPP_FAIRNEST_RENT_WELCOME_TEMPLATE_NAME ?? 'welcome_rentals';
+const FAIRNEST_RENT_WELCOME_TEMPLATE_LANG =
+  process.env.WHATSAPP_FAIRNEST_RENT_WELCOME_TEMPLATE_LANG ?? 'en_US';
+const FAIRNEST_RENT_WELCOME_TEMPLATE_ENABLED =
+  process.env.WHATSAPP_FAIRNEST_RENT_WELCOME_TEMPLATE_ENABLED !== 'false';
+
 const MATCH_NO_BIO_FALLBACK =
   'User did not upload bio at this point, you can speak more with the user to find out the kind of person he is before agreeing to live together';
 
@@ -632,6 +642,65 @@ export class WhatsAppLifecycleService {
     }
 
     return true;
+  }
+
+  /**
+   * Welcomes a freshly created FairNest rent request over WhatsApp using the
+   * approved `welcome_rentals` template. Fills four body params
+   * (first name, property type, location(s), budget range) and two quick-reply
+   * buttons (Continue / Decline). Fire-and-forget friendly: returns false on
+   * invalid phone or total failure rather than throwing.
+   */
+  async sendFairnestRentWelcome(input: {
+    fullName: string;
+    phoneNumber: string;
+    propertyType: string;
+    preferredLocations: string[];
+    budgetMin: number;
+    budgetMax: number;
+  }): Promise<boolean> {
+    const phoneE164 =
+      normalizePhoneToE164(input.phoneNumber) ??
+      normalizeAnyPhoneToE164(input.phoneNumber);
+    if (!phoneE164) {
+      console.warn('[whatsapp] fairnest rent welcome skipped: invalid phone', input.phoneNumber);
+      return false;
+    }
+
+    const firstName = (input.fullName ?? '').trim().split(/\s+/)[0] || 'there';
+    const locations = (input.preferredLocations ?? []).join(', ');
+    const budget = `${naira(Number(input.budgetMin ?? 0))} – ${naira(Number(input.budgetMax ?? input.budgetMin ?? 0))}`;
+    let sent = false;
+
+    if (FAIRNEST_RENT_WELCOME_TEMPLATE_ENABLED) {
+      try {
+        await whatsappService.sendTemplate({
+          to: phoneE164,
+          name: FAIRNEST_RENT_WELCOME_TEMPLATE_NAME,
+          language: FAIRNEST_RENT_WELCOME_TEMPLATE_LANG,
+          bodyParams: [firstName, input.propertyType, locations, budget],
+          buttonPayloads: ['Continue', 'Decline'],
+        });
+        sent = true;
+      } catch (err) {
+        console.error('[whatsapp] fairnest rent welcome template failed, falling back:', err);
+      }
+    }
+
+    if (!sent) {
+      try {
+        await whatsappService.sendText(
+          phoneE164,
+          `Welcome to FairNest Housing!\nHi ${firstName}! 👋 Thank you for choosing FairNest Housing to rent your next ${input.propertyType}. We've received your request around ${locations} within a budget of ${budget}.`,
+        );
+        sent = true;
+      } catch (err) {
+        console.error('[whatsapp] fairnest rent welcome text fallback failed:', err);
+        return false;
+      }
+    }
+
+    return sent;
   }
 
   /**

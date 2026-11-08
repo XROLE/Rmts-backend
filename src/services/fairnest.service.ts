@@ -1,5 +1,6 @@
 import { HttpError } from '../middleware/errorHandler.js';
 import { supabase } from '../config/supabase.js';
+import { whatsappLifecycleService } from './whatsappLifecycle.service.js';
 
 export interface CreateFairnestPayload {
   fullName: string;
@@ -83,6 +84,21 @@ export class FairnestService {
 
     if (ambassador) {
       await this.incrementReferralCount(ambassador);
+    }
+
+    if (table === 'fairnest_rent_profiles') {
+      void whatsappLifecycleService
+        .sendFairnestRentWelcome({
+          fullName,
+          phoneNumber,
+          propertyType,
+          preferredLocations,
+          budgetMin,
+          budgetMax,
+        })
+        .catch((err) =>
+          console.error('[fairnest] rent welcome message failed:', err),
+        );
     }
 
     return data;
