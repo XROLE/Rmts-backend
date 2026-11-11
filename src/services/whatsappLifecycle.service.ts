@@ -587,6 +587,7 @@ export class WhatsAppLifecycleService {
     }
 
     const firstName = input.name.trim().split(/\s+/)[0] || 'there';
+    const locations = (input.preferred_locations ?? []).join(', ');
     let sent = false;
 
     if (MONTHLY_CONFIRM_TEMPLATE_ENABLED) {
@@ -595,7 +596,7 @@ export class WhatsAppLifecycleService {
           to: phoneE164,
           name: MONTHLY_CONFIRM_TEMPLATE_NAME,
           language: MONTHLY_CONFIRM_TEMPLATE_LANG,
-          bodyParams: [firstName, input.preferred_location, input.state],
+          bodyParams: [firstName, locations, input.state],
         });
         sent = true;
       } catch (err) {
@@ -607,7 +608,7 @@ export class WhatsAppLifecycleService {
       try {
         await whatsappService.sendText(
           phoneE164,
-          `Hi ${firstName}! 👋 I'm Sido from Roommates NG. I've received your request for a monthly shared apartment in ${input.preferred_location}, ${input.state}. We'll notify you as soon as a space that fits your budget opens up there. Hang tight!`,
+          `Hi ${firstName}! 👋 I'm Sido from Roommates NG. I've received your request for a monthly shared apartment in ${locations}, ${input.state}. We'll notify you as soon as a space that fits your budget opens up there. Hang tight!`,
         );
         sent = true;
       } catch (err) {
@@ -636,7 +637,7 @@ export class WhatsAppLifecycleService {
           phoneE164,
           firstName,
           "I just requested a monthly shared apartment.",
-          `The user just submitted a request for a monthly paid/shared apartment in ${input.preferred_location}, ${input.state} (budget around ${this.formatMonthlyBudgetRange(Number(input.budget_min ?? 0), Number(input.budget_max ?? input.budget_min ?? 0))}, move-in ${input.move_in_date}). They are NOT being matched with anyone — we will only notify them when a suitable space becomes available. Reply warmly to confirm their request was received and explain they'll hear from us when a space opens in their area.`,
+          `The user just submitted a request for a monthly paid/shared apartment in ${locations}, ${input.state} (budget around ${this.formatMonthlyBudgetRange(Number(input.budget_min ?? 0), Number(input.budget_max ?? input.budget_min ?? 0))}, move-in ${input.move_in_date}). They are NOT being matched with anyone — we will only notify them when a suitable space becomes available. Reply warmly to confirm their request was received and explain they'll hear from us when a space opens in their area.`,
         )
         .catch((err) => console.error('[whatsapp] sido monthly follow-up failed:', err));
     }
@@ -719,6 +720,7 @@ export class WhatsAppLifecycleService {
     }
 
     const firstName = input.name.trim().split(/\s+/)[0] || 'there';
+    const locations = (input.preferred_locations ?? []).join(', ');
     const budgetLabel = this.formatMonthlyBudgetRange(
       Number(input.budget_min ?? 0),
       Number(input.budget_max ?? input.budget_min ?? 0),
@@ -732,7 +734,7 @@ export class WhatsAppLifecycleService {
           name: MONTHLY_SPACE_TEMPLATE_NAME,
           language: MONTHLY_SPACE_TEMPLATE_LANG,
           // {{1}} name, {{2}} location, {{3}} state, {{4}} budget range
-          bodyParams: [firstName, input.preferred_location, input.state, budgetLabel],
+          bodyParams: [firstName, locations, input.state, budgetLabel],
           buttonPayloads: [MONTHLY_PROCEED_PAYLOAD, MONTHLY_DECLINE_PAYLOAD],
         });
         sent = true;
@@ -745,7 +747,7 @@ export class WhatsAppLifecycleService {
       try {
         await whatsappService.sendText(
           phoneE164,
-          `Good news ${firstName}! 🎉 A monthly shared apartment in ${input.preferred_location}, ${input.state} around your budget of ${budgetLabel} is now available. Reply here and Sido will share the details and next steps.`,
+          `Good news ${firstName}! 🎉 A monthly shared apartment in ${locations}, ${input.state} around your budget of ${budgetLabel} is now available. Reply here and Sido will share the details and next steps.`,
         );
         sent = true;
       } catch (err) {
@@ -851,7 +853,7 @@ export class WhatsAppLifecycleService {
 
     await whatsappService.sendText(
       phoneE164,
-      `Awesome! 🏠 To secure this monthly shared apartment in ${request.preferred_location}, ${request.state}, please pay the one-time ${naira(amountNg)} matching fee. Once paid, Sido will share the full space details and next steps.`,
+      `Awesome! 🏠 To secure this monthly shared apartment in ${(request.preferred_locations ?? []).join(', ')}, ${request.state}, please pay the one-time ${naira(amountNg)} matching fee. Once paid, Sido will share the full space details and next steps.`,
     );
     await whatsappService.sendCtaUrlButton({
       to: phoneE164,
