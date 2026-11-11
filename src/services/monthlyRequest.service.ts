@@ -12,14 +12,14 @@ export interface CreateMonthlyRequestPayload {
   email?: string;
   gender: 'male' | 'female' | 'no_preference';
   state: string;
-  preferredLocation: string;
+  preferredLocations: string[];
   budgetMin: number;
   budgetMax: number;
   moveInDate: string;
 }
 
 const SELECT =
-  'id, name, phone_number, email, gender, state, preferred_location, budget_min, budget_max, move_in_date, confirmed_at, notified_at, payment_reference, payment_link_created_at, paid_at, declined_at, created_at, updated_at';
+  'id, name, phone_number, email, gender, state, preferred_locations, budget_min, budget_max, move_in_date, confirmed_at, notified_at, payment_reference, payment_link_created_at, paid_at, declined_at, created_at, updated_at';
 
 /**
  * Stores a request for a monthly paid / shared apartment and kicks off the
@@ -36,7 +36,9 @@ export class MonthlyRequestService {
         email: payload.email,
         gender: payload.gender,
         state: payload.state.trim(),
-        preferred_location: payload.preferredLocation.trim(),
+        preferred_locations: Array.from(
+          new Set(payload.preferredLocations.map((l) => l.trim()).filter(Boolean)),
+        ),
         budget_min: payload.budgetMin,
         budget_max: payload.budgetMax,
         move_in_date: payload.moveInDate,
@@ -86,8 +88,10 @@ export class MonthlyRequestService {
 
     const matches = (requests ?? []).filter((r) => {
       const rState = (r.state ?? '').trim().toLowerCase();
-      const rLoc = (r.preferred_location ?? '').trim().toLowerCase();
-      return rState === targetState && rLoc === targetLocation;
+      const rLocs = (r.preferred_locations ?? []).map((l: string) =>
+        l.trim().toLowerCase(),
+      );
+      return rState === targetState && rLocs.includes(targetLocation);
     });
 
     let notified = 0;
@@ -161,7 +165,7 @@ export interface MonthlyRequestRecord {
   email?: string | null;
   gender: 'male' | 'female' | 'no_preference';
   state: string;
-  preferred_location: string;
+  preferred_locations: string[];
   budget_min: number;
   budget_max: number;
   move_in_date: string;

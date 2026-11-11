@@ -14,10 +14,10 @@ export const createMonthlyRequestSchema = z.object({
     email: z.string().email().optional(),
     gender: GENDER,
     state: z.string().min(1, 'State is required').max(100),
-    preferredLocation: z
-      .string()
-      .min(1, 'Preferred location is required')
-      .max(100),
+    preferredLocations: z
+      .array(z.string().min(1).max(100))
+      .min(1, 'At least one preferred location is required')
+      .max(3, 'You can select up to 3 preferred locations'),
     budgetMin: z.number().min(0, 'Minimum budget must be 0 or greater'),
     budgetMax: z.number().min(0, 'Maximum budget must be 0 or greater'),
     moveInDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
