@@ -248,7 +248,10 @@ export class SidoBotService {
       ? '- The user is already registered (a roommate profile exists). Do not push registration; reassure them their profile is active and they will be notified on WhatsApp when a match is found.'
       : "- The user is NOT registered yet. If they ask about joining or want the registration form, use the send_registration_invite tool.";
 
-    return `${SIDO_SYSTEM_PROMPT}
+    const coRentersUrl = `${getSiteBaseUrl()}/co-renters`;
+    const prompt = SIDO_SYSTEM_PROMPT.replace(/{{CO_RENTERS_URL}}/g, coRentersUrl);
+
+    return `${prompt}
 
 CURRENT USER CONTEXT
 - User's name (from WhatsApp profile): ${name || 'unknown'}
@@ -326,6 +329,10 @@ ${status}`;
       return "Your payment link is ready 👆 Tap 'Pay now' on the button above to complete payment. Once paid, you'll get a receipt by email and your account will be activated. Need help? Just type 'talk to human'.";
     }
 
+    if (toolName === 'send_co_renters_link') {
+      return this.sendCoRentersLink(phoneE164);
+    }
+
     if (toolName === 'request_human_handover') {
       let summary = '';
       try {
@@ -374,6 +381,23 @@ ${status}`;
       header: 'Create your profile 🏠',
       body: 'Set up your Roommates NG profile on the website — it takes under 2 minutes.',
     });
+  }
+
+  /** Sends the "Browse Co-Renters Pool" CTA button pointing at the directory. */
+  private async sendCoRentersLink(phoneE164: string): Promise<string> {
+    try {
+      await whatsappService.sendCtaUrlButton({
+        to: phoneE164,
+        displayText: 'Browse Co-Renters Pool',
+        url: `${getSiteBaseUrl()}/co-renters`,
+        header: 'Co-Renters Pool 🤝',
+        body: 'Browse registered members, filter by location, budget, tribe and lifestyle, then tap "View Details" to request a match.',
+      });
+      return "I've sent you the Co-Renters Pool link 👆 Tap 'Browse Co-Renters Pool' to see members looking to combine budgets and find your match. Remember to meet in public first and never send rent to a personal account 😊";
+    } catch (err) {
+      console.error('[sido] failed to send co-renters link:', err);
+      return "Sorry, I couldn't send the Co-Renters Pool link just now 🙈 Please try again in a moment, or type 'talk to human' if you'd like a person to help you.";
+    }
   }
 
   /**

@@ -211,7 +211,38 @@ UPDATING YOUR REQUEST
 - If the user is NOT registered yet, the tool sends the registration link
   instead. Do not describe the whole form — sending the link IS the helpful step.
 
-HARD RULES
+ NEW FEATURE AWARENESS: CO-RENTERS POOL DIRECTORY
+FairNest Housing now provides a private, members-only Co-Renters Pool directory where registered
+users who want to pool funds together to rent an entire apartment can browse and match with
+compatible co-renters based on budget, location, tribe, interests, and lifestyle.
+
+- **Directory URL:** {{CO_RENTERS_URL}}
+- **Key Value Proposition:** Users do not have to wait passively for an existing shared apartment—
+  they can view profiles of other registered members looking to combine budgets, inspect their
+  ideal flatmate criteria, and initiate a match request directly from the page.
+- **Important Boundary:** FairNest Housing connects registered members and facilitates
+  introductions, but we do not run background checks or vet individual co-renters. Users are
+  encouraged to meet in public first and never transfer rent directly to an individual's personal
+  account.
+
+WHEN TO SHARE THE CO-RENTERS POOL LINK:
+1. **Explicit Interest:** Whenever a user expresses interest in pooling resources, splitting rent,
+   finding a roommate/flatmate, or matching with someone who shares a similar budget, location,
+   interest, or lifestyle.
+2. **Budget / Shared Living Context:** If a user's solo budget is tight for their preferred
+   neighborhood or they indicate openness to co-living during chat, proactively suggest the
+   Co-Renters Pool as an option so they can browse and match themselves.
+3. **Direct Request:** Whenever a user asks to see the co-renters list, roommate directory, or asks
+   for the link to find someone to rent with.
+
+HOW TO RESPOND & SHARE THE LINK:
+- Keep the tone warm, helpful, and natural (consistent with Sido's persona).
+- Clearly explain that they can browse registered members, filter by location, budget, tribe, and
+  lifestyle, and click "View Details" to request a match.
+- When the moment is right, call the send_co_renters_link tool to send the directory link as a
+  button. (If you mention the link in prose, use {{CO_RENTERS_URL}}.)
+
+ HARD RULES
 - Never invent facts, prices, matches or policies that are not in this knowledge base. If you
   don't know, say you'll find out or offer to hand to a human.
 - Never ask for payment, passwords, OTPs, card numbers or other sensitive data in chat.
@@ -292,6 +323,19 @@ export const SIDO_TOOLS: SidoTool[] = [
           },
         },
         required: ['type'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'send_co_renters_link',
+      description:
+        "Send the user a 'Browse Co-Renters Pool' button linking to the FairNest Housing Co-Renters Pool directory. Call this when a user expresses interest in pooling resources, splitting rent, finding a roommate/flatmate, or matching with someone who shares a similar budget, location, tribe, interest, or lifestyle; when their solo budget is tight for their preferred neighborhood or they show openness to co-living; or when they directly ask to see the co-renters list / roommate directory / link to find someone to rent with. The tool sends the directory link as a button. Do not send the link yourself — the tool handles it.",
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
       },
     },
   },
