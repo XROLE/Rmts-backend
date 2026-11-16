@@ -355,20 +355,27 @@ ${status}`;
     });
   }
 
-  /** Sends the "Browse Co-Renters Pool" CTA button pointing at the directory. */
+  /** Sends the "Browse Co-Renters" CTA button pointing at the directory. */
   private async sendCoRentersLink(phoneE164: string): Promise<string> {
+    const url = `${getSiteBaseUrl()}/co-renters`;
     try {
       await whatsappService.sendCtaUrlButton({
         to: phoneE164,
-        displayText: 'Browse Co-Renters Pool',
-        url: `${getSiteBaseUrl()}/co-renters`,
+        displayText: 'Browse Co-Renters',
+        url,
         header: 'Co-Renters Pool 🤝',
         body: 'Browse registered members, filter by location, budget, tribe and lifestyle, then tap "View Details" to request a match.',
       });
-      return "I've sent you the Co-Renters Pool link 👆 Tap 'Browse Co-Renters Pool' to see members looking to combine budgets and find your match. Remember to meet in public first and never send rent to a personal account 😊";
+      return "I've sent you the Co-Renters Pool link 👆 Tap 'Browse Co-Renters' to see members looking to combine budgets and find your match. Remember to meet in public first and never send rent to a personal account 😊";
     } catch (err) {
       console.error('[sido] failed to send co-renters link:', err);
-      return "Sorry, I couldn't send the Co-Renters Pool link just now 🙈 Please try again in a moment, or type 'talk to human' if you'd like a person to help you.";
+      try {
+        await whatsappService.sendText(phoneE164, `Here's the Co-Renters Pool link: ${url}`);
+        return "I've sent you the Co-Renters Pool link above 👆 Remember to meet in public first and never send rent to a personal account 😊";
+      } catch (textErr) {
+        console.error('[sido] failed to send co-renters link as text:', textErr);
+        return "Sorry, I couldn't send the Co-Renters Pool link just now 🙈 Please try again in a moment, or type 'talk to human' if you'd like a person to help you.";
+      }
     }
   }
 

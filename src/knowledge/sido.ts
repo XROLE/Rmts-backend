@@ -306,7 +306,7 @@ export const SIDO_TOOLS: SidoTool[] = [
     function: {
       name: 'send_co_renters_link',
       description:
-        "Send the user a 'Browse Co-Renters Pool' button linking to the FairNest Housing Co-Renters Pool directory. Call this when a user expresses interest in pooling resources, splitting rent, finding a roommate/flatmate, or matching with someone who shares a similar budget, location, tribe, interest, or lifestyle; when their solo budget is tight for their preferred neighborhood or they show openness to co-living; or when they directly ask to see the co-renters list / roommate directory / link to find someone to rent with. The tool sends the directory link as a button. Do not send the link yourself — the tool handles it.",
+        "Send the user a 'Browse Co-Renters' button linking to the FairNest Housing Co-Renters Pool directory. Call this when a user expresses interest in pooling resources, splitting rent, finding a roommate/flatmate, or matching with someone who shares a similar budget, location, tribe, interest, or lifestyle; when their solo budget is tight for their preferred neighborhood or they show openness to co-living; or when they directly ask to see the co-renters list / roommate directory / link to find someone to rent with. The tool sends the directory link as a button. Do not send the link yourself — the tool handles it.",
       parameters: {
         type: 'object',
         properties: {},

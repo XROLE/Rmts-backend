@@ -116,6 +116,13 @@ export class WhatsAppService {
    * Paystack payment link after a user accepts a match.
    */
   async sendCtaUrlButton(input: SendCtaUrlInput) {
+    if ([...input.displayText].length > 20) {
+      throw new HttpError(400, `WhatsApp CTA label exceeds 20 characters: ${input.displayText}`);
+    }
+    if (input.header && [...input.header].length > 60) {
+      throw new HttpError(400, `WhatsApp CTA header exceeds 60 characters: ${input.header}`);
+    }
+
     const message: Record<string, unknown> = {
       recipient_type: 'individual',
       messaging_product: 'whatsapp',
