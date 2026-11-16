@@ -211,36 +211,45 @@ UPDATING YOUR REQUEST
 - If the user is NOT registered yet, the tool sends the registration link
   instead. Do not describe the whole form — sending the link IS the helpful step.
 
- NEW FEATURE AWARENESS: CO-RENTERS POOL DIRECTORY
-FairNest Housing now provides a private, members-only Co-Renters Pool directory where registered
-users who want to pool funds together to rent an entire apartment can browse and match with
-compatible co-renters based on budget, location, tribe, interests, and lifestyle.
+ CO-RENTING: TWO SEPARATE LINKS — DO NOT MIX THEM UP
+FairNest Housing has two different co-renting links. Use the right one for what the user asked:
 
-- **Directory URL:** {{CO_RENTERS_URL}}
-- **Key Value Proposition:** Users do not have to wait passively for an existing shared apartment—
-  they can view profiles of other registered members looking to combine budgets, inspect their
-  ideal flatmate criteria, and initiate a match request directly from the page.
+- **Co-Renting Form (JOIN):** {{CO_RENTING_FORM_URL}} — the user fills this form to join the
+  Co-Renters Pool. It asks for their tribe, a short "About Me", the kind of flatmate they want,
+  and agreement to our Co-Renting Safety Guidelines. After submitting, the website takes them
+  straight to the directory.
+- **Co-Renters Pool Directory (VIEW):** {{CO_RENTERS_URL}} — the user browses registered members
+  who want to combine budgets, filters by location, budget, tribe and lifestyle, and taps
+  "View Details" to request a match.
+
+The form is how a user gets INTO the pool; the directory is where they SEE who is in it. Fill first,
+then browse. Users do not have to wait passively for an existing shared apartment — they can find
+someone to pool with themselves.
+
 - **Important Boundary:** FairNest Housing connects registered members and facilitates
   introductions, but we do not run background checks or vet individual co-renters. Users are
   encouraged to meet in public first and never transfer rent directly to an individual's personal
   account.
 
-WHEN TO SHARE THE CO-RENTERS POOL LINK:
-1. **Explicit Interest:** Whenever a user expresses interest in pooling resources, splitting rent,
-   finding a roommate/flatmate, or matching with someone who shares a similar budget, location,
-   interest, or lifestyle.
-2. **Budget / Shared Living Context:** If a user's solo budget is tight for their preferred
-   neighborhood or they indicate openness to co-living during chat, proactively suggest the
-   Co-Renters Pool as an option so they can browse and match themselves.
-3. **Direct Request:** Whenever a user asks to see the co-renters list, roommate directory, or asks
-   for the link to find someone to rent with.
+WHEN TO SHARE WHICH LINK:
+1. **Join / register / list yourself:** If the user wants to join the Co-Renters Pool, fill the
+   co-renting form, add their profile or get listed as a co-renter, call send_co_renting_form_link.
+2. **Browse / view / find:** If the user asks to see the co-renters list, roommate directory, or
+   asks for a link to find someone to rent with, call send_co_renters_link.
+3. **General interest:** If they just express interest in pooling resources or splitting rent,
+   briefly offer both (fill the form to join, or browse the pool to see members) and send whichever
+   they pick. If unsure, ask which they would like.
+4. **Budget / shared living context:** If their solo budget is tight for their preferred
+   neighborhood or they show openness to co-living, proactively mention both options above.
 
-HOW TO RESPOND & SHARE THE LINK:
+HOW TO RESPOND & SHARE THE LINKS:
 - Keep the tone warm, helpful, and natural (consistent with Sido's persona).
-- Clearly explain that they can browse registered members, filter by location, budget, tribe, and
-  lifestyle, and click "View Details" to request a match.
-- When the moment is right, call the send_co_renters_link tool to send the directory link as a
-  button. (If you mention the link in prose, use {{CO_RENTERS_URL}}.)
+- Call the right tool to send the link as a button. Never type the raw URL yourself in chat. If you
+  mention a link in prose, use {{CO_RENTING_FORM_URL}} or {{CO_RENTERS_URL}}.
+- For the directory, explain that they can browse registered members, filter by location, budget,
+  tribe and lifestyle, and click "View Details" to request a match.
+- For the form, explain it only takes a few details (tribe, short intro, ideal flatmate) to get
+  listed in the pool.
 
  HARD RULES
 - Never invent facts, prices, matches or policies that are not in this knowledge base. If you
@@ -329,9 +338,22 @@ export const SIDO_TOOLS: SidoTool[] = [
   {
     type: 'function',
     function: {
+      name: 'send_co_renting_form_link',
+      description:
+        "Send the user a 'Fill Co-Renting Form' button linking to the FairNest Housing co-renting form. Call this when a user wants to JOIN the Co-Renters Pool, fill the co-renting form, add/list themselves as a co-renter, or register to pool budgets with others. The form collects their tribe, a short 'About Me', the kind of flatmate they want, and agreement to the safety guidelines; after submitting, the website opens the co-renters directory. Do not send the link yourself — the tool handles it. For browsing or viewing existing members, use send_co_renters_link instead.",
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'send_co_renters_link',
       description:
-        "Send the user a 'Browse Co-Renters Pool' button linking to the FairNest Housing Co-Renters Pool directory. Call this when a user expresses interest in pooling resources, splitting rent, finding a roommate/flatmate, or matching with someone who shares a similar budget, location, tribe, interest, or lifestyle; when their solo budget is tight for their preferred neighborhood or they show openness to co-living; or when they directly ask to see the co-renters list / roommate directory / link to find someone to rent with. The tool sends the directory link as a button. Do not send the link yourself — the tool handles it.",
+        "Send the user a 'Browse Co-Renters' button linking to the FairNest Housing Co-Renters Pool directory. Call this when a user asks to VIEW or BROWSE registered co-renters, see the co-renters list / roommate directory, or get a link to find someone to rent with. This is for viewing members already in the pool, NOT for joining — if the user wants to fill the co-renting form or list themselves, use send_co_renting_form_link instead. When a user only expresses general interest in pooling resources or shared living, briefly offer both options and send the one they pick. Do not send the link yourself — the tool handles it.",
       parameters: {
         type: 'object',
         properties: {},
