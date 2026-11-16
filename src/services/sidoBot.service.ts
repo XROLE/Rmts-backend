@@ -248,8 +248,11 @@ export class SidoBotService {
       ? '- The user is already registered (a roommate profile exists). Do not push registration; reassure them their profile is active and they will be notified on WhatsApp when a match is found.'
       : "- The user is NOT registered yet. If they ask about joining or want the registration form, use the send_registration_invite tool.";
 
-    const coRentersUrl = `${getSiteBaseUrl()}/co-renters`;
-    const prompt = SIDO_SYSTEM_PROMPT.replace(/{{CO_RENTERS_URL}}/g, coRentersUrl);
+    const baseUrl = getSiteBaseUrl();
+    const prompt = SIDO_SYSTEM_PROMPT.replace(/{{CO_RENTERS_URL}}/g, `${baseUrl}/co-renters`).replace(
+      /{{CO_RENTING_FORM_URL}}/g,
+      `${baseUrl}/co-renting-form`,
+    );
 
     return `${prompt}
 
@@ -299,6 +302,10 @@ ${status}`;
         await this.logMessage(phoneE164, 'assistant', fallback);
       }
       return "Your service-fee payment link is ready 👆 Tap 'Pay now' on the button above to complete payment. Once paid, you'll get a receipt by email and your account will be activated. Need help? Just type 'talk to human'.";
+    }
+
+    if (toolName === 'send_co_renting_form_link') {
+      return this.sendCoRentingFormLink(phoneE164);
     }
 
     if (toolName === 'send_co_renters_link') {
@@ -355,28 +362,67 @@ ${status}`;
     });
   }
 
-  /** Sends the "Browse Co-Renters" CTA button pointing at the directory. */
-  private async sendCoRentersLink(phoneE164: string): Promise<string> {
-    const url = `${getSiteBaseUrl()}/co-renters`;
+  private async sendLinkCta(
+    phoneE164: string,
+    opts: {
+      url: string;
+      displayText: string;
+      header: string;
+      body: string;
+      label: string;
+      success: string;
+      fallback: string;
+    },
+  ): Promise<string> {
     try {
       await whatsappService.sendCtaUrlButton({
         to: phoneE164,
-        displayText: 'Browse Co-Renters',
-        url,
-        header: 'Co-Renters Pool 🤝',
-        body: 'Browse registered members, filter by location, budget, tribe and lifestyle, then tap "View Details" to request a match.',
+        displayText: opts.displayText,
+        url: opts.url,
+        header: opts.header,
+        body: opts.body,
       });
-      return "I've sent you the Co-Renters Pool link 👆 Tap 'Browse Co-Renters' to see members looking to combine budgets and find your match. Remember to meet in public first and never send rent to a personal account 😊";
+      return opts.success;
     } catch (err) {
-      console.error('[sido] failed to send co-renters link:', err);
+      console.error(`[sido] failed to send ${opts.label} link:`, err);
       try {
-        await whatsappService.sendText(phoneE164, `Here's the Co-Renters Pool link: ${url}`);
-        return "I've sent you the Co-Renters Pool link above 👆 Remember to meet in public first and never send rent to a personal account 😊";
+        await whatsappService.sendText(phoneE164, `Here's the ${opts.label}: ${opts.url}`);
+        return opts.fallback;
       } catch (textErr) {
-        console.error('[sido] failed to send co-renters link as text:', textErr);
-        return "Sorry, I couldn't send the Co-Renters Pool link just now 🙈 Please try again in a moment, or type 'talk to human' if you'd like a person to help you.";
+        console.error(`[sido] failed to send ${opts.label} link as text:`, textErr);
+        return `Sorry, I couldn't send the ${opts.label} just now 🙈 Please try again in a moment, or type 'talk to human' if you'd like a person to help you.`;
       }
     }
+  }
+
+  /** Sends the "Browse Co-Renters" CTA button pointing at the directory. */
+  private async sendCoRentersLink(phoneE164: string): Promise<string> {
+    return this.sendLinkCta(phoneE164, {
+      url: `${getSiteBaseUrl()}/co-renters`,
+      displayText: 'Browse Co-Renters',
+      header: 'Co-Renters Pool 🤝',
+      body: 'Browse registered members, filter by location, budget, tribe and lifestyle, then tap "View Details" to request a match.',
+      label: 'Co-Renters Pool link',
+      success:
+        "I've sent you the Co-Renters Pool link 👆 Tap 'Browse Co-Renters' to see members looking to combine budgets and find your match. Remember to meet in public first and never send rent to a personal account 😊",
+      fallback:
+        "I've sent you the Co-Renters Pool link above 👆 Remember to meet in public first and never send rent to a personal account 😊",
+    });
+  }
+
+  /** Sends the "Fill Co-Renting Form" CTA button pointing at the join form. */
+  private async sendCoRentingFormLink(phoneE164: string): Promise<string> {
+    return this.sendLinkCta(phoneE164, {
+      url: `${getSiteBaseUrl()}/co-renting-form`,
+      displayText: 'Fill Co-Renting Form',
+      header: 'Join the Co-Renters Pool 📝',
+      body: 'Fill the co-renting form with your tribe, a short intro and the kind of flatmate you want, then browse members looking to pool budgets.',
+      label: 'co-renting form',
+      success:
+        "I've sent you the co-renting form 👆 Tap 'Fill Co-Renting Form' to join the pool — it takes just a few details. Once you submit, you can browse members looking to combine budgets. Please meet in public first and never send rent to a personal account 😊",
+      fallback:
+        "I've sent you the co-renting form above 👆 Fill it to join the pool, then you can browse members looking to combine budgets. Please meet in public first and never send rent to a personal account 😊",
+    });
   }
 
   /**
