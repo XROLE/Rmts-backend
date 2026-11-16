@@ -26,9 +26,6 @@ const LOCKED_EDIT_STATUSES = [
   'potential_match_found',
   'waiting_approval',
   'payment_pending',
-  'paid',
-  'connected',
-  'closed',
   'paused',
   'suspended',
 ] as const;
