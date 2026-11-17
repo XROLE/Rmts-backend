@@ -11,6 +11,7 @@ import whatsappRoutes from './whatsapp.routes.js';
 import jobRoutes from './job.routes.js';
 import monthlyRequestRoutes from './monthlyRequest.routes.js';
 import fairnestRoutes from './fairnest.routes.js';
+import coRentingRoutes from './coRenting.routes.js';
 
 const router = Router();
 
@@ -30,5 +31,6 @@ router.use('/whatsapp', whatsappRoutes);
 router.use('/jobs', jobRoutes);
 router.use('/monthly-requests', monthlyRequestRoutes);
 router.use('/fairnest', fairnestRoutes);
+router.use('/co-renting', coRentingRoutes);
 
 export default router;
