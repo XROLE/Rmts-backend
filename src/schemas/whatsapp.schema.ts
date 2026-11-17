@@ -79,6 +79,18 @@ export const triggerRegistrationSchema = z.object({
   }),
 });
 
+// POST /whatsapp/trigger-co-renting-nudge
+export const triggerCoRentingNudgeSchema = z.object({
+  body: z.object({
+    phone: z.string().regex(
+      SUPPORTED_PHONE_REGEX,
+      'Phone must be a valid Nigerian or UK number (e.g. 08131234567, +2348131234567, 07123456789 or +447123456789)',
+    ),
+    name: z.string().min(1, 'Name is required').max(100),
+    url: z.string().url('A valid co-renting hub URL is required'),
+  }),
+});
+
 // POST /whatsapp/bot/resume
 export const resumeBotSchema = z.object({
   body: z.object({
