@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCoRentingLinkToken } from '../middleware/requireCoRentingLinkToken.js';
-import { requireRegisteredUser } from '../middleware/requireRegisteredUser.js';
+import { requireCoRenterAccess } from '../middleware/requireCoRenterAccess.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import {
   getCoRentersSchema,
@@ -26,11 +26,11 @@ router.patch(
   setCoRentingInterest,
 );
 
-// Any registered user: browse the paginated co-renters directory.
+// Directory browsing: accepts the signed token from Sido's co-renting hub link
+// or a normal Bearer token for a registered user.
 router.get(
   '/renters',
-  requireAuth,
-  requireRegisteredUser,
+  requireCoRenterAccess,
   validate(getCoRentersSchema),
   getCoRenters,
 );

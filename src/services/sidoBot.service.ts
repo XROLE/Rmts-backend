@@ -269,13 +269,10 @@ export class SidoBotService {
       : "- The user is NOT registered yet. If they ask about joining or want the registration form, use the send_registration_invite tool.";
 
     const baseUrl = getSiteBaseUrl();
-    const coRentingFormUrl = coRentingProfile
-      ? this.buildCoRentingFormUrl(coRentingProfile)
-      : `${baseUrl}/co-renting-form`;
-    const prompt = SIDO_SYSTEM_PROMPT.replace(/{{CO_RENTERS_URL}}/g, `${baseUrl}/co-renters`).replace(
-      /{{CO_RENTING_FORM_URL}}/g,
-      coRentingFormUrl,
-    );
+    const coRentingHubUrl = coRentingProfile
+      ? this.buildProfileLink('/co-renting-hub', coRentingProfile)
+      : `${baseUrl}/co-renting-hub`;
+    const prompt = SIDO_SYSTEM_PROMPT.replace(/{{CO_RENTING_HUB_URL}}/g, coRentingHubUrl);
 
     return `${prompt}
 
@@ -356,12 +353,8 @@ ${status}`;
       return "Your payment link is ready 👆 Tap 'Pay now' on the button above to complete payment. Once paid, you'll get a receipt by email and your account will be activated. Need help? Just type 'talk to human'.";
     }
 
-    if (toolName === 'send_co_renting_form_link') {
-      return this.sendCoRentingFormLink(phoneE164, coRentingProfile);
-    }
-
-    if (toolName === 'send_co_renters_link') {
-      return this.sendCoRentersLink(phoneE164);
+    if (toolName === 'send_co_renting_hub_link') {
+      return this.sendCoRentingHubLink(phoneE164, coRentingProfile);
     }
 
     if (toolName === 'request_human_handover') {
@@ -447,31 +440,16 @@ ${status}`;
     }
   }
 
-  /** Sends the "Browse Co-Renters" CTA button pointing at the directory. */
-  private async sendCoRentersLink(phoneE164: string): Promise<string> {
-    return this.sendLinkCta(phoneE164, {
-      url: `${getSiteBaseUrl()}/co-renters`,
-      displayText: 'Browse Co-Renters',
-      header: 'Co-Renters Pool 🤝',
-      body: 'Browse registered members, filter by location, budget, tribe and lifestyle, then tap "View Details" to request a match.',
-      label: 'Co-Renters Pool link',
-      success:
-        "I've sent you the Co-Renters Pool link 👆 Tap 'Browse Co-Renters' to see members looking to combine budgets and find your match. Remember to meet in public first and never send rent to a personal account 😊",
-      fallback:
-        "I've sent you the Co-Renters Pool link above 👆 Remember to meet in public first and never send rent to a personal account 😊",
-    });
-  }
-
-  /** Builds the tokenized co-renting form URL for a known roommate profile. */
-  private buildCoRentingFormUrl(profile: CoRentingProfileRef): string {
+  /** Builds a tokenized website URL for a known roommate profile. */
+  private buildProfileLink(path: string, profile: CoRentingProfileRef): string {
     const params = new URLSearchParams();
     params.set('token', createCoRentingLinkToken(profile.id));
     params.set('name', profile.fullName ?? '');
-    return `${getSiteBaseUrl()}/co-renting-form?${params.toString()}`;
+    return `${getSiteBaseUrl()}${path}?${params.toString()}`;
   }
 
-  /** Sends the "Fill Co-Renting Form" CTA button pointing at the join form. */
-  private async sendCoRentingFormLink(
+  /** Sends the single co-renting hub CTA button with the two options on the page. */
+  private async sendCoRentingHubLink(
     phoneE164: string,
     profile: CoRentingProfileRef | null,
   ): Promise<string> {
@@ -480,15 +458,15 @@ ${status}`;
     }
 
     return this.sendLinkCta(phoneE164, {
-      url: this.buildCoRentingFormUrl(profile),
-      displayText: 'Fill Co-Renting Form',
-      header: 'Join the Co-Renters Pool 📝',
-      body: 'Fill the co-renting form with your tribe, a short intro and the kind of flatmate you want, then browse members looking to pool budgets.',
-      label: 'co-renting form',
+      url: this.buildProfileLink('/co-renting-hub', profile),
+      displayText: 'Open Co-Renting Hub',
+      header: 'Co-Renting Hub 🤝',
+      body: 'Join the Co-Renters Pool or browse registered members who want to combine budgets — both options are on the hub page.',
+      label: 'co-renting hub',
       success:
-        "I've sent you the co-renting form 👆 Tap 'Fill Co-Renting Form' to join the pool — it takes just a few details. Once you submit, you can browse members looking to combine budgets. Please meet in public first and never send rent to a personal account 😊",
+        "I've sent you the co-renting hub 👆 Tap 'Open Co-Renting Hub' to fill the form (tribe, short intro, ideal flatmate) or browse members looking to pool budgets. Please meet in public first and never send rent to a personal account 😊",
       fallback:
-        "I've sent you the co-renting form above 👆 Fill it to join the pool, then you can browse members looking to combine budgets. Please meet in public first and never send rent to a personal account 😊",
+        "I've sent you the co-renting hub above 👆 On the page you can join the pool or browse members looking to combine budgets. Please meet in public first and never send rent to a personal account 😊",
     });
   }
 
