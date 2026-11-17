@@ -92,11 +92,16 @@ const FAIRNEST_RENT_WELCOME_TEMPLATE_ENABLED =
   process.env.WHATSAPP_FAIRNEST_RENT_WELCOME_TEMPLATE_ENABLED !== 'false';
 
 /** Template inviting a user to the co-renting hub. {{1}} = first name, and its
- * single URL button's {{1}} is filled with the supplied co-renting hub link. */
+ * single quick-reply button carries the hub link in its payload so the tap can
+ * be answered with an interactive CTA button containing the real URL. */
 const CO_RENTING_HUB_NUDGE_TEMPLATE_NAME =
   process.env.WHATSAPP_CO_RENTING_HUB_NUDGE_TEMPLATE_NAME ?? 'co_renting_hub_nudge';
 const CO_RENTING_HUB_NUDGE_TEMPLATE_LANG =
   process.env.WHATSAPP_CO_RENTING_HUB_NUDGE_TEMPLATE_LANG ?? 'en';
+/** Prefix on the quick-reply payload so the webhook can route the tap and
+ * recover the hub URL without storing it. */
+export const CO_RENTING_HUB_PAYLOAD_PREFIX = 'co_renting_hub:';
+const CO_RENTING_HUB_CTA_MAX_PAYLOAD_LENGTH = 1800;
 
 const MATCH_NO_BIO_FALLBACK =
   'User did not upload bio at this point, you can speak more with the user to find out the kind of person he is before agreeing to live together';
@@ -280,8 +285,9 @@ export class WhatsAppLifecycleService {
 
   /**
    * Sends the co-renting hub nudge template to a user. The approved template's
-   * body {{1}} is filled with the caller-supplied name and its single URL CTA
-   * button is filled with the caller-supplied co-renting hub link.
+   * body {{1}} is filled with the caller-supplied name and its single quick-reply
+   * button carries the hub URL in its payload; tapping it triggers a follow-up
+   * interactive CTA button with the real link (see handleCoRentingHubButtonReply).
    */
   async sendCoRentingHubNudge(input: { phone: string; name: string; url: string }) {
     const phoneE164 = normalizePhoneToE164(input.phone) ?? normalizeAnyPhoneToE164(input.phone);
@@ -289,15 +295,54 @@ export class WhatsAppLifecycleService {
       throw new HttpError(400, 'A valid Nigerian or UK phone number is required');
     }
 
+    const payload = `${CO_RENTING_HUB_PAYLOAD_PREFIX}${input.url}`;
+    if (payload.length > CO_RENTING_HUB_CTA_MAX_PAYLOAD_LENGTH) {
+      throw new HttpError(400, 'Co-renting hub URL is too long for a quick-reply payload');
+    }
+
     const { wamId } = await whatsappService.sendTemplate({
       to: phoneE164,
       name: CO_RENTING_HUB_NUDGE_TEMPLATE_NAME,
       language: CO_RENTING_HUB_NUDGE_TEMPLATE_LANG,
       bodyParams: [input.name],
-      urlButtons: [{ index: 0, url: input.url }],
+      buttonPayloads: [payload],
     });
 
     return { phone: phoneE164, wamId };
+  }
+
+  /**
+   * Handles a tap on the co-renting hub nudge template's quick-reply button.
+   * The URL is recovered from the payload and sent as an interactive CTA button,
+   * which — unlike a template URL button — supports a full dynamic URL.
+   */
+  async handleCoRentingHubButtonReply(phoneE164: string, payload: string): Promise<boolean> {
+    if (!payload.startsWith(CO_RENTING_HUB_PAYLOAD_PREFIX)) return false;
+
+    const url = payload.slice(CO_RENTING_HUB_PAYLOAD_PREFIX.length);
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        throw new Error(`unsupported protocol: ${parsed.protocol}`);
+      }
+    } catch {
+      console.warn('[whatsapp] co-renting hub button carried an invalid URL', { phoneE164, url });
+      return false;
+    }
+
+    try {
+      await whatsappService.sendCtaUrlButton({
+        to: phoneE164,
+        displayText: 'Open Co-Renting Hub',
+        url,
+        header: 'Co-Renting Hub',
+        body: 'Join the Co-Renters Pool or browse registered members who want to combine budgets — both options are on the hub page.',
+      });
+      return true;
+    } catch (err) {
+      console.error('[whatsapp] failed to send co-renting hub CTA after button tap:', err);
+      return false;
+    }
   }
 
   /**

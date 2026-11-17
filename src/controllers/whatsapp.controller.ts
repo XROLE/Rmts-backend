@@ -8,6 +8,7 @@ import {
   MATCH_DECLINE_PAYLOAD,
   MONTHLY_PROCEED_PAYLOAD,
   MONTHLY_DECLINE_PAYLOAD,
+  CO_RENTING_HUB_PAYLOAD_PREFIX,
   type TriggerMatchInput,
 } from '../services/whatsappLifecycle.service.js';
 import { sidoBotService } from '../services/sidoBot.service.js';
@@ -217,6 +218,13 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
               payload,
             );
             console.log(`[whatsapp] monthly button from ${phoneE164} ->`, result);
+          } else if (payload.startsWith(CO_RENTING_HUB_PAYLOAD_PREFIX)) {
+            // Co-renting hub nudge button: deliver the real hub link as a CTA.
+            const result = await whatsappLifecycleService.handleCoRentingHubButtonReply(
+              phoneE164,
+              payload,
+            );
+            console.log(`[whatsapp] co-renting hub button from ${phoneE164} ->`, result);
           } else {
             // Welcome template buttons (welcome_to_roommate_ng): confirm/decline.
             const result = await whatsappLifecycleService.handleWelcomeButtonReply(
@@ -310,7 +318,8 @@ export async function triggerOnboarding(req: Request, res: Response) {
 
 /**
  * POST /trigger-co-renting-nudge — admin trigger that sends the co-renting hub
- * nudge template with the supplied name and URL button to a phone number.
+ * nudge template with the supplied name; its quick-reply button carries the
+ * URL, which is delivered as a CTA button when the user taps it.
  */
 export async function triggerCoRentingHubNudge(req: Request, res: Response) {
   const { phone, name, url } = req.body as { phone: string; name: string; url: string };
