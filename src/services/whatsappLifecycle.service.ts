@@ -7,6 +7,7 @@ import { sidoBotService } from './sidoBot.service.js';
 import { paystackService } from './paystack.service.js';
 import type { MonthlyRequestRecord } from './monthlyRequest.service.js';
 import { emailService } from './email.service.js';
+import { createCoRentingLinkToken } from './coRentingLinkToken.service.js';
 import { getReplacementFormBaseUrl } from '../config/site.js';
 import { normalizePhoneToE164, normalizeAnyPhoneToE164, phoneLookupVariants } from '../utils/normalizePhone.js';
 
@@ -345,15 +346,16 @@ export class WhatsAppLifecycleService {
 
   /**
    * Handles a tap on the co-renting hub nudge template's quick-reply button.
-   * The URL is recovered from the payload and sent as an interactive CTA button,
-   * which — unlike a template URL button — supports a full dynamic URL.
+   * The URL is recovered from the payload, refreshed with a signed co-renting
+   * token for the recipient, then sent as an interactive CTA button.
    */
   async handleCoRentingHubButtonReply(phoneE164: string, payload: string): Promise<boolean> {
     if (!payload.startsWith(CO_RENTING_HUB_PAYLOAD_PREFIX)) return false;
 
     const url = payload.slice(CO_RENTING_HUB_PAYLOAD_PREFIX.length);
+    let parsed: URL;
     try {
-      const parsed = new URL(url);
+      parsed = new URL(url);
       if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
         throw new Error(`unsupported protocol: ${parsed.protocol}`);
       }
@@ -362,11 +364,13 @@ export class WhatsAppLifecycleService {
       return false;
     }
 
+    const tokenizedUrl = await this.withCoRentingHubToken(phoneE164, parsed);
+
     try {
       await whatsappService.sendCtaUrlButton({
         to: phoneE164,
         displayText: 'Open Co-Renting Hub',
-        url,
+        url: tokenizedUrl,
         header: 'Co-Renting Hub',
         body: 'Join the Co-Renters Pool or browse registered members who want to combine budgets — both options are on the hub page.',
       });
@@ -375,6 +379,36 @@ export class WhatsAppLifecycleService {
       console.error('[whatsapp] failed to send co-renting hub CTA after button tap:', err);
       return false;
     }
+  }
+
+  /**
+   * Ensures a co-renting hub URL carries a fresh signed token for the recipient,
+   * mirroring Sido's own link. Caller-supplied nudge URLs often omit the token
+   * (or carry a stale one), leaving the hub page unable to identify the user.
+   */
+  private async withCoRentingHubToken(phoneE164: string, url: URL): Promise<string> {
+    if (!url.pathname.replace(/\/+$/, '').endsWith('/co-renting-hub')) return url.toString();
+
+    try {
+      const { data: profile } = await supabase
+        .from('roommate_profiles')
+        .select('id')
+        .in('phone_number', phoneLookupVariants(phoneE164))
+        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!profile?.id) {
+        console.warn('[whatsapp] co-renting hub token skipped: no profile for phone', phoneE164);
+        return url.toString();
+      }
+
+      url.searchParams.set('token', createCoRentingLinkToken(profile.id));
+    } catch (err) {
+      console.error('[whatsapp] failed to attach co-renting hub token:', err);
+    }
+    return url.toString();
   }
 
   /**
