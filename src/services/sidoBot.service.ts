@@ -7,6 +7,7 @@ import { emailService } from './email.service.js';
 import { SIDO_SYSTEM_PROMPT, SIDO_TOOLS } from '../knowledge/sido.js';
 import { phoneLookupVariants, normalizePhoneToE164, normalizeAnyPhoneToE164 } from '../utils/normalizePhone.js';
 import { getSiteBaseUrl } from '../config/site.js';
+import { createCoRentingLinkToken } from './coRentingLinkToken.service.js';
 import type { StatusChangeProfileInput } from './whatsappLifecycle.service.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
@@ -73,6 +74,11 @@ interface HistoryMessage {
   content: string;
 }
 
+interface CoRentingProfileRef {
+  id: string;
+  fullName: string | null;
+}
+
 /**
  * Sido — Roommates NG's WhatsApp AI assistant.
  *
@@ -123,6 +129,9 @@ export class SidoBotService {
     const history = await this.loadHistory(phoneE164, SIDO_MAX_HISTORY);
     const profile = await this.findProfileByPhone(phoneE164);
     const registered = profile !== null;
+    const coRentingProfile = profile
+      ? { id: profile.id, fullName: profile.full_name }
+      : null;
 
     // A paused or suspended profile can't use the normal assistant flow. Short
     // circuit with a canned Sido reply that states the status and points the
@@ -144,7 +153,7 @@ export class SidoBotService {
 
     let reply: string;
     try {
-      reply = await this.complete(phoneE164, name, registered, history);
+      reply = await this.complete(phoneE164, name, registered, history, coRentingProfile);
     } catch (err) {
       console.error('[sido] LLM call failed:', err);
       reply =
@@ -198,12 +207,13 @@ export class SidoBotService {
     name: string,
     registered: boolean,
     history: HistoryMessage[],
+    coRentingProfile: CoRentingProfileRef | null,
   ): Promise<string> {
     if (!OPENAI_API_KEY) {
       throw new Error('OPENAI_API_KEY is not configured');
     }
 
-    const system = this.buildSystemPrompt(name, registered);
+    const system = this.buildSystemPrompt(name, registered, coRentingProfile);
 
     const res = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
       method: 'POST',
@@ -235,7 +245,13 @@ export class SidoBotService {
 
     const toolCall = message.tool_calls?.[0];
     if (toolCall?.function?.name) {
-      return this.runTool(phoneE164, name, toolCall.function.name, toolCall.function.arguments ?? '{}');
+      return this.runTool(
+        phoneE164,
+        name,
+        toolCall.function.name,
+        toolCall.function.arguments ?? '{}',
+        coRentingProfile,
+      );
     }
 
     const content = typeof message.content === 'string' ? message.content.trim() : '';
@@ -243,15 +259,22 @@ export class SidoBotService {
     throw new Error('OpenAI returned empty content');
   }
 
-  private buildSystemPrompt(name: string, registered: boolean): string {
+  private buildSystemPrompt(
+    name: string,
+    registered: boolean,
+    coRentingProfile: CoRentingProfileRef | null,
+  ): string {
     const status = registered
       ? '- The user is already registered (a roommate profile exists). Do not push registration; reassure them their profile is active and they will be notified on WhatsApp when a match is found.'
       : "- The user is NOT registered yet. If they ask about joining or want the registration form, use the send_registration_invite tool.";
 
     const baseUrl = getSiteBaseUrl();
+    const coRentingFormUrl = coRentingProfile
+      ? this.buildCoRentingFormUrl(coRentingProfile)
+      : `${baseUrl}/co-renting-form`;
     const prompt = SIDO_SYSTEM_PROMPT.replace(/{{CO_RENTERS_URL}}/g, `${baseUrl}/co-renters`).replace(
       /{{CO_RENTING_FORM_URL}}/g,
-      `${baseUrl}/co-renting-form`,
+      coRentingFormUrl,
     );
 
     return `${prompt}
@@ -271,6 +294,7 @@ ${status}`;
     name: string,
     toolName: string,
     argsJson: string,
+    coRentingProfile: CoRentingProfileRef | null,
   ): Promise<string> {
     if (toolName === 'send_registration_invite') {
       try {
@@ -305,7 +329,7 @@ ${status}`;
     }
 
     if (toolName === 'send_co_renting_form_link') {
-      return this.sendCoRentingFormLink(phoneE164);
+      return this.sendCoRentingFormLink(phoneE164, coRentingProfile);
     }
 
     if (toolName === 'send_co_renters_link') {
@@ -410,10 +434,25 @@ ${status}`;
     });
   }
 
+  /** Builds the tokenized co-renting form URL for a known roommate profile. */
+  private buildCoRentingFormUrl(profile: CoRentingProfileRef): string {
+    const params = new URLSearchParams();
+    params.set('token', createCoRentingLinkToken(profile.id));
+    params.set('name', profile.fullName ?? '');
+    return `${getSiteBaseUrl()}/co-renting-form?${params.toString()}`;
+  }
+
   /** Sends the "Fill Co-Renting Form" CTA button pointing at the join form. */
-  private async sendCoRentingFormLink(phoneE164: string): Promise<string> {
+  private async sendCoRentingFormLink(
+    phoneE164: string,
+    profile: CoRentingProfileRef | null,
+  ): Promise<string> {
+    if (!profile) {
+      return "It looks like you don't have a roommate profile with us yet. Please register if you haven't already, or contact our support team for help.";
+    }
+
     return this.sendLinkCta(phoneE164, {
-      url: `${getSiteBaseUrl()}/co-renting-form`,
+      url: this.buildCoRentingFormUrl(profile),
       displayText: 'Fill Co-Renting Form',
       header: 'Join the Co-Renters Pool 📝',
       body: 'Fill the co-renting form with your tribe, a short intro and the kind of flatmate you want, then browse members looking to pool budgets.',
@@ -580,12 +619,12 @@ ${status}`;
 
   private async findProfileByPhone(
     phoneE164: string,
-  ): Promise<{ id: string; status: string } | null> {
+  ): Promise<{ id: string; status: string; full_name: string | null } | null> {
     const variants = phoneLookupVariants(phoneE164);
 
     const { data, error } = await supabase
       .from('roommate_profiles')
-      .select('id, status')
+      .select('id, status, full_name')
       .in('phone_number', variants)
       .order('updated_at', { ascending: false })
       .order('created_at', { ascending: false })
@@ -595,7 +634,7 @@ ${status}`;
     if (error) {
       throw new HttpError(500, `Failed to look up existing profile: ${error.message}`);
     }
-    return (data as { id: string; status: string } | null) ?? null;
+    return (data as { id: string; status: string; full_name: string | null } | null) ?? null;
   }
 
   /**

@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { coRentingService } from '../services/coRenting.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
+import type { CoRentingRequest } from '../middleware/requireCoRentingLinkToken.js';
 import type {
   GetCoRentersInput,
   SetCoRentingInterestInput,
@@ -9,14 +10,13 @@ import type {
 } from '../schemas/coRenting.schema.js';
 
 /**
- * Registers (or updates) the authenticated user's co-renting interest on their
- * roommate profile. Uses req.user.id — set by requireAuth after the token is
- * verified and the user is confirmed to exist in the database.
+ * Registers (or updates) co-renting interest on the roommate profile identified
+ * by the signed token Sido attached to the form link. No website login needed.
  */
 export const setCoRentingInterest = asyncHandler(
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (req: CoRentingRequest, res: Response) => {
     const profile = await coRentingService.setInterest(
-      req.user!.id,
+      req.coRenting!.profileId,
       req.body as SetCoRentingInterestInput,
     );
 
@@ -29,7 +29,7 @@ export const setCoRentingInterest = asyncHandler(
 );
 
 /**
- * Admin-only: paginated directory of registered co-renters.
+ * Any registered user: paginated directory of registered co-renters.
  */
 export const getCoRenters = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {

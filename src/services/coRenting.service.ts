@@ -11,16 +11,16 @@ const CO_RENTING_SELECT =
 
 export class CoRentingService {
   /**
-   * Records a user's co-renting interest on their own roommate profile, found
-   * via the authenticated user id (roommate_profiles.user_id). Each submission
-   * resets the matching status to 'active-search' so a fresh expression of
-   * interest starts at the beginning of the matching lifecycle.
+   * Records co-renting interest on the roommate profile identified by the
+   * signed link token. Each submission resets the matching status to
+   * 'active-search' so a fresh expression of interest starts at the beginning
+   * of the matching lifecycle.
    */
-  async setInterest(userId: string, payload: SetCoRentingInterestInput) {
+  async setInterest(profileId: string, payload: SetCoRentingInterestInput) {
     const { data: existing, error: findError } = await supabase
       .from('roommate_profiles')
       .select('id')
-      .eq('user_id', userId)
+      .eq('id', profileId)
       .is('deleted_at', null)
       .maybeSingle();
 
@@ -28,7 +28,7 @@ export class CoRentingService {
       throw new HttpError(500, `Failed to find roommate profile: ${findError.message}`);
     }
     if (!existing) {
-      throw new HttpError(404, 'No roommate profile found for this user');
+      throw new HttpError(404, 'Roommate profile not found');
     }
 
     const { data, error } = await supabase
@@ -41,7 +41,7 @@ export class CoRentingService {
         co_renting_matching_status: 'active-search' as CoRentingMatchingStatus,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', existing.id)
+      .eq('id', profileId)
       .select(CO_RENTING_SELECT)
       .single();
 

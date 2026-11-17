@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { validate } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireCoRentingLinkToken } from '../middleware/requireCoRentingLinkToken.js';
 import { requireRegisteredUser } from '../middleware/requireRegisteredUser.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import {
@@ -16,12 +17,11 @@ import {
 
 const router = Router();
 
-// Any registered user (admin or regular): save co-renting interest on their
-// own roommate profile, identified by the authenticated user id.
+// Public form submitted from the Sido link: the signed token identifies the
+// roommate profile to update (no website login required).
 router.patch(
   '/interest',
-  requireAuth,
-  requireRegisteredUser,
+  requireCoRentingLinkToken,
   validate(setCoRentingInterestSchema),
   setCoRentingInterest,
 );
