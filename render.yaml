@@ -78,3 +78,9 @@ services:
       - key: WHATSAPP_PAYMENT_CONFIRMATION_TEMPLATE_ENABLED
         value: 'true'
         sync: false
+      - key: WHATSAPP_CO_RENTING_HUB_NUDGE_TEMPLATE_NAME
+        value: co_renting_hub_nudge
+        sync: false
+      - key: WHATSAPP_CO_RENTING_HUB_NUDGE_TEMPLATE_LANG
+        value: en
+        sync: false

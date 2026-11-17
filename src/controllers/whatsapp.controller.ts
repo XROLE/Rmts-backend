@@ -309,6 +309,20 @@ export async function triggerOnboarding(req: Request, res: Response) {
 }
 
 /**
+ * POST /trigger-co-renting-nudge — admin trigger that sends the co-renting hub
+ * nudge template with the supplied name and URL button to a phone number.
+ */
+export async function triggerCoRentingHubNudge(req: Request, res: Response) {
+  const { phone, name, url } = req.body as { phone: string; name: string; url: string };
+  const result = await whatsappLifecycleService.sendCoRentingHubNudge({ phone, name, url });
+  res.status(201).json({
+    success: true,
+    message: 'Co-renting hub nudge sent successfully',
+    data: result,
+  });
+}
+
+/**
  * POST /trigger-registration — internal trigger that sends the 4-screen
  * registration Flow so the user can build their full roommate profile.
  */

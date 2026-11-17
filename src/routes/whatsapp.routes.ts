@@ -6,6 +6,7 @@ import {
   triggerOnboardingSchema,
   triggerMatchSchema,
   triggerRegistrationSchema,
+  triggerCoRentingNudgeSchema,
   resumeBotSchema,
 } from '../schemas/whatsapp.schema.js';
 import {
@@ -15,6 +16,7 @@ import {
   triggerOnboarding,
   triggerMatch,
   triggerRegistration,
+  triggerCoRentingHubNudge,
   resumeBot,
   listBotConversations,
   listSidoChats,
@@ -51,6 +53,12 @@ router.post(
   requireAdmin,
   validate(triggerRegistrationSchema),
   triggerRegistration,
+);
+router.post(
+  '/trigger-co-renting-nudge',
+  requireAdmin,
+  validate(triggerCoRentingNudgeSchema),
+  triggerCoRentingHubNudge,
 );
 
 // Sido bot administration (admin only): answer/resume human handovers.

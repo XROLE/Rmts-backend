@@ -91,6 +91,13 @@ const FAIRNEST_RENT_WELCOME_TEMPLATE_LANG =
 const FAIRNEST_RENT_WELCOME_TEMPLATE_ENABLED =
   process.env.WHATSAPP_FAIRNEST_RENT_WELCOME_TEMPLATE_ENABLED !== 'false';
 
+/** Template inviting a user to the co-renting hub. {{1}} = first name, and its
+ * single URL button's {{1}} is filled with the supplied co-renting hub link. */
+const CO_RENTING_HUB_NUDGE_TEMPLATE_NAME =
+  process.env.WHATSAPP_CO_RENTING_HUB_NUDGE_TEMPLATE_NAME ?? 'co_renting_hub_nudge';
+const CO_RENTING_HUB_NUDGE_TEMPLATE_LANG =
+  process.env.WHATSAPP_CO_RENTING_HUB_NUDGE_TEMPLATE_LANG ?? 'en';
+
 const MATCH_NO_BIO_FALLBACK =
   'User did not upload bio at this point, you can speak more with the user to find out the kind of person he is before agreeing to live together';
 
@@ -269,6 +276,28 @@ export class WhatsAppLifecycleService {
     });
 
     return { phone: phoneE164, flowToken };
+  }
+
+  /**
+   * Sends the co-renting hub nudge template to a user. The approved template's
+   * body {{1}} is filled with the caller-supplied name and its single URL CTA
+   * button is filled with the caller-supplied co-renting hub link.
+   */
+  async sendCoRentingHubNudge(input: { phone: string; name: string; url: string }) {
+    const phoneE164 = normalizePhoneToE164(input.phone) ?? normalizeAnyPhoneToE164(input.phone);
+    if (!phoneE164) {
+      throw new HttpError(400, 'A valid Nigerian or UK phone number is required');
+    }
+
+    const { wamId } = await whatsappService.sendTemplate({
+      to: phoneE164,
+      name: CO_RENTING_HUB_NUDGE_TEMPLATE_NAME,
+      language: CO_RENTING_HUB_NUDGE_TEMPLATE_LANG,
+      bodyParams: [input.name],
+      urlButtons: [{ index: 0, url: input.url }],
+    });
+
+    return { phone: phoneE164, wamId };
   }
 
   /**
