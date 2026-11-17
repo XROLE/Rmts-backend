@@ -26,7 +26,7 @@ router.patch(
   setCoRentingInterest,
 );
 
-// Directory browsing: accepts the signed token from the Sido /co-renters link
+// Directory browsing: accepts the signed token from Sido's co-renting hub link
 // or a normal Bearer token for a registered user.
 router.get(
   '/renters',

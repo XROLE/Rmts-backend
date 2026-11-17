@@ -9,7 +9,7 @@ export type CoRenterAccessRequest = CoRentingRequest & AuthenticatedRequest;
 
 /**
  * Guards the co-renters directory. Accepts either the signed token Sido
- * attaches to the /co-renters link, or a normal Supabase Bearer token whose
+ * attaches to the co-renting hub link, or a normal Supabase Bearer token whose
  * user exists in public.users. The token path needs no database lookup — the
  * signature already identifies a roommate profile.
  */
