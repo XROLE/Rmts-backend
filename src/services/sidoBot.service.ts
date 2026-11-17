@@ -270,9 +270,12 @@ export class SidoBotService {
 
     const baseUrl = getSiteBaseUrl();
     const coRentingFormUrl = coRentingProfile
-      ? this.buildCoRentingFormUrl(coRentingProfile)
+      ? this.buildProfileLink('/co-renting-form', coRentingProfile)
       : `${baseUrl}/co-renting-form`;
-    const prompt = SIDO_SYSTEM_PROMPT.replace(/{{CO_RENTERS_URL}}/g, `${baseUrl}/co-renters`).replace(
+    const coRentersUrl = coRentingProfile
+      ? this.buildProfileLink('/co-renters', coRentingProfile)
+      : `${baseUrl}/co-renters`;
+    const prompt = SIDO_SYSTEM_PROMPT.replace(/{{CO_RENTERS_URL}}/g, coRentersUrl).replace(
       /{{CO_RENTING_FORM_URL}}/g,
       coRentingFormUrl,
     );
@@ -333,7 +336,7 @@ ${status}`;
     }
 
     if (toolName === 'send_co_renters_link') {
-      return this.sendCoRentersLink(phoneE164);
+      return this.sendCoRentersLink(phoneE164, coRentingProfile);
     }
 
     if (toolName === 'request_human_handover') {
@@ -420,9 +423,14 @@ ${status}`;
   }
 
   /** Sends the "Browse Co-Renters" CTA button pointing at the directory. */
-  private async sendCoRentersLink(phoneE164: string): Promise<string> {
+  private async sendCoRentersLink(
+    phoneE164: string,
+    profile: CoRentingProfileRef | null,
+  ): Promise<string> {
     return this.sendLinkCta(phoneE164, {
-      url: `${getSiteBaseUrl()}/co-renters`,
+      url: profile
+        ? this.buildProfileLink('/co-renters', profile)
+        : `${getSiteBaseUrl()}/co-renters`,
       displayText: 'Browse Co-Renters',
       header: 'Co-Renters Pool 🤝',
       body: 'Browse registered members, filter by location, budget, tribe and lifestyle, then tap "View Details" to request a match.',
@@ -434,12 +442,12 @@ ${status}`;
     });
   }
 
-  /** Builds the tokenized co-renting form URL for a known roommate profile. */
-  private buildCoRentingFormUrl(profile: CoRentingProfileRef): string {
+  /** Builds a tokenized website URL for a known roommate profile. */
+  private buildProfileLink(path: string, profile: CoRentingProfileRef): string {
     const params = new URLSearchParams();
     params.set('token', createCoRentingLinkToken(profile.id));
     params.set('name', profile.fullName ?? '');
-    return `${getSiteBaseUrl()}/co-renting-form?${params.toString()}`;
+    return `${getSiteBaseUrl()}${path}?${params.toString()}`;
   }
 
   /** Sends the "Fill Co-Renting Form" CTA button pointing at the join form. */
@@ -452,7 +460,7 @@ ${status}`;
     }
 
     return this.sendLinkCta(phoneE164, {
-      url: this.buildCoRentingFormUrl(profile),
+      url: this.buildProfileLink('/co-renting-form', profile),
       displayText: 'Fill Co-Renting Form',
       header: 'Join the Co-Renters Pool 📝',
       body: 'Fill the co-renting form with your tribe, a short intro and the kind of flatmate you want, then browse members looking to pool budgets.',
