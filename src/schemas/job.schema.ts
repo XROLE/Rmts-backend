@@ -55,6 +55,16 @@ const CURRENCY = z.enum(['USD', 'NGN'], {
   errorMap: () => ({ message: "Currency must be 'USD' or 'NGN'" }),
 });
 
+const SUBMISSION_PLATFORM = z.enum(
+  ['LinkedIn', 'GitHub', 'Portfolio', 'Twitter (X)', 'TikTok', 'Instagram', 'Facebook', 'Snapchat'],
+  {
+    errorMap: () => ({
+      message:
+        'Submission platform must be one of: LinkedIn, GitHub, Portfolio, Twitter (X), TikTok, Instagram, Facebook, Snapchat',
+    }),
+  },
+);
+
 const JOB_POSTING_FIELDS = z.object({
   title: z
     .string()
@@ -93,6 +103,10 @@ const JOB_POSTING_FIELDS = z.object({
     .optional(),
   isActive: z.boolean().default(true),
   closingDate: z.union([z.coerce.date(), z.literal(null)]).optional(),
+  showHiringProcess: z.boolean().default(true),
+  acceptCv: z.boolean().default(true),
+  acceptNoticePeriod: z.boolean().default(true),
+  submissionPlatform: SUBMISSION_PLATFORM.nullable().optional(),
 });
 
 const salaryInRange = (data: { salaryMin?: number; salaryMax?: number }) =>
@@ -166,7 +180,7 @@ export const createJobApplicationSchema = z.object({
       .trim()
       .min(1, 'Cover note is required')
       .max(5000, 'Cover note must be 5,000 characters or fewer'),
-    noticePeriod: z.string().trim().min(1, 'Notice period is required').max(100),
+    noticePeriod: z.string().trim().max(100).optional(),
     expectedSalary: z.coerce
       .number({ invalid_type_error: 'Expected salary must be a number' })
       .min(0, 'Expected salary cannot be negative')
