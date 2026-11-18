@@ -52,7 +52,7 @@ export class JobService {
         show_hiring_process: input.showHiringProcess,
         accept_cv: input.acceptCv,
         accept_notice_period: input.acceptNoticePeriod,
-        submission_platform: input.submissionPlatform ?? null,
+        submission_platform: input.submissionPlatforms ?? [],
         created_by: createdBy,
       })
       .select(POSTING_SELECT)
@@ -88,7 +88,7 @@ export class JobService {
       showHiringProcess: 'show_hiring_process',
       acceptCv: 'accept_cv',
       acceptNoticePeriod: 'accept_notice_period',
-      submissionPlatform: 'submission_platform',
+      submissionPlatforms: 'submission_platform',
     };
 
     const update: Record<string, unknown> = {};

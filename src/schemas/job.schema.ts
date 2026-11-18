@@ -106,7 +106,13 @@ const JOB_POSTING_FIELDS = z.object({
   showHiringProcess: z.boolean().default(true),
   acceptCv: z.boolean().default(true),
   acceptNoticePeriod: z.boolean().default(true),
-  submissionPlatform: SUBMISSION_PLATFORM.nullable().optional(),
+  submissionPlatforms: z
+    .array(SUBMISSION_PLATFORM)
+    .max(8)
+    .refine((platforms) => new Set(platforms).size === platforms.length, {
+      message: 'Submission platforms must not contain duplicates',
+    })
+    .optional(),
 });
 
 const salaryInRange = (data: { salaryMin?: number; salaryMax?: number }) =>
