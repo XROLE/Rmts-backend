@@ -12,9 +12,31 @@ const NIGERIAN_STATES = [
 ] as const;
 
 const SOCIAL_MEDIA_PLATFORMS = [
-  'instagram', 'tiktok', 'twitter', 'facebook', 'whatsapp',
-  'linkedin', 'snapchat', 'youtube', 'telegram',
+  'instagram', 'tiktok', 'twitter', 'facebook',
+  'linkedin', 'snapchat', 'youtube',
 ] as const;
+
+type SocialMediaPlatform = (typeof SOCIAL_MEDIA_PLATFORMS)[number];
+
+const SOCIAL_MEDIA_PLATFORM_LABELS: Record<SocialMediaPlatform, string> = {
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+  twitter: 'X (Twitter)',
+  facebook: 'Facebook',
+  linkedin: 'LinkedIn',
+  snapchat: 'Snapchat',
+  youtube: 'YouTube',
+};
+
+const SOCIAL_MEDIA_PLATFORM_DOMAINS: Record<SocialMediaPlatform, string[]> = {
+  instagram: ['instagram.com'],
+  tiktok: ['tiktok.com'],
+  twitter: ['x.com', 'twitter.com'],
+  facebook: ['facebook.com'],
+  linkedin: ['linkedin.com'],
+  snapchat: ['snapchat.com'],
+  youtube: ['youtube.com'],
+};
 
 const EMERGENCY_CONTACT = z
   .object({
@@ -84,12 +106,47 @@ export const updateAmbassadorProfileSchema = z.object({
         .array(z.enum(SOCIAL_MEDIA_PLATFORMS))
         .max(1, 'socialMediaPlatform must be a single platform')
         .optional(),
-      socialMediaHandle: z.string().max(150).optional(),
+      socialMediaHandle: z
+        .string()
+        .max(2048, 'Social media link must be 2048 characters or fewer')
+        .optional(),
       socialMediaTargetAudience: z.string().max(150).optional(),
     })
     .strict()
     .refine((data) => Object.keys(data).length > 0, {
       message: 'At least one field must be provided to update',
+    })
+    .superRefine((data, ctx) => {
+      const link = data.socialMediaHandle;
+      if (link === undefined) return;
+
+      const platform = data.socialMediaPlatform?.[0];
+      const label = platform ? SOCIAL_MEDIA_PLATFORM_LABELS[platform] : 'social media';
+      const addIssue = () =>
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['socialMediaHandle'],
+          message: `Social media handle must be a valid ${label} profile link`,
+        });
+
+      let url: URL;
+      try {
+        url = new URL(link);
+      } catch {
+        addIssue();
+        return;
+      }
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        addIssue();
+        return;
+      }
+      if (!platform) return;
+
+      const host = url.hostname.toLowerCase().replace(/^(www|m)\./, '');
+      const allowed = SOCIAL_MEDIA_PLATFORM_DOMAINS[platform];
+      if (!allowed.some((domain) => host === domain || host.endsWith(`.${domain}`))) {
+        addIssue();
+      }
     }),
 });
 
