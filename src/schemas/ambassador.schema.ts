@@ -38,6 +38,85 @@ const SOCIAL_MEDIA_PLATFORM_DOMAINS: Record<SocialMediaPlatform, string[]> = {
   youtube: ['youtube.com'],
 };
 
+const SOCIAL_MEDIA_PLATFORM_EXAMPLES: Record<SocialMediaPlatform, string> = {
+  instagram: 'https://instagram.com/username',
+  tiktok: 'https://www.tiktok.com/@username',
+  twitter: 'https://x.com/username',
+  facebook: 'https://facebook.com/username',
+  linkedin: 'https://linkedin.com/in/username',
+  snapchat: 'https://www.snapchat.com/add/username',
+  youtube: 'https://youtube.com/@username',
+};
+
+const RESERVED_PROFILE_SEGMENTS: Record<string, string[]> = {
+  instagram: [
+    'about', 'accounts', 'explore', 'login', 'p', 'privacy', 'reel', 'reels',
+    'terms', 'tv', 'directory', 'stories', 'embed', 'create', 'why_this',
+  ],
+  twitter: [
+    'home', 'i', 'explore', 'settings', 'messages', 'notifications', 'search',
+    'share', 'intent', 'compose', 'login', 'signup', 'about', 'privacy', 'tos',
+    'oauth',
+  ],
+  facebook: [
+    'login', 'help', 'settings', 'privacy', 'terms', 'policies', 'games',
+    'groups', 'pages', 'watch', 'marketplace', 'events', 'photos', 'video',
+    'story.php', 'home.php', 'friends', 'me', 'search', 'ads', 'business',
+    'developers', 'about',
+  ],
+};
+
+function hasValidProfilePath(platform: SocialMediaPlatform, url: URL): boolean {
+  const segments = url.pathname.split('/').filter(Boolean).map((s) => s.toLowerCase());
+  if (segments.length === 0) return false;
+  const first = segments[0];
+
+  switch (platform) {
+    case 'instagram':
+      return (
+        /^[a-z0-9._]{1,30}$/.test(first) &&
+        !RESERVED_PROFILE_SEGMENTS.instagram.includes(first)
+      );
+    case 'tiktok':
+      return /^@[a-z0-9._]{1,24}$/.test(first);
+    case 'twitter':
+      return (
+        /^[a-z0-9_]{1,15}$/.test(first) &&
+        !RESERVED_PROFILE_SEGMENTS.twitter.includes(first)
+      );
+    case 'facebook':
+      if (first === 'profile.php') {
+        return segments.length === 1 && /^\d+$/.test(url.searchParams.get('id') ?? '');
+      }
+      if (first === 'people') {
+        return segments.length >= 3 && /^\d+$/.test(segments[2]);
+      }
+      return (
+        /^[a-z0-9.]{1,50}$/.test(first) &&
+        !RESERVED_PROFILE_SEGMENTS.facebook.includes(first)
+      );
+    case 'snapchat':
+      return (
+        (first === 'add' || first === 'u') &&
+        segments.length >= 2 &&
+        /^[a-z0-9._-]{3,30}$/.test(segments[1])
+      );
+    case 'linkedin':
+      return (
+        (first === 'in' || first === 'company') &&
+        segments.length >= 2 &&
+        /^[a-z0-9-]{1,100}$/.test(segments[1])
+      );
+    case 'youtube':
+      if (first.startsWith('@')) return /^@[a-z0-9._-]{1,30}$/.test(first);
+      return (
+        ['c', 'user', 'channel'].includes(first) &&
+        segments.length >= 2 &&
+        /^[a-z0-9_-]{1,100}$/.test(segments[1])
+      );
+  }
+}
+
 const EMERGENCY_CONTACT = z
   .object({
     name: z.string().min(1).max(100),
@@ -126,7 +205,9 @@ export const updateAmbassadorProfileSchema = z.object({
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['socialMediaHandle'],
-          message: `Social media handle must be a valid ${label} profile link`,
+          message: platform
+            ? `Social media handle must be a valid ${label} profile link, e.g. ${SOCIAL_MEDIA_PLATFORM_EXAMPLES[platform]}`
+            : 'Social media handle must be a valid social media profile link',
         });
 
       let url: URL;
@@ -144,7 +225,10 @@ export const updateAmbassadorProfileSchema = z.object({
 
       const host = url.hostname.toLowerCase().replace(/^(www|m)\./, '');
       const allowed = SOCIAL_MEDIA_PLATFORM_DOMAINS[platform];
-      if (!allowed.some((domain) => host === domain || host.endsWith(`.${domain}`))) {
+      if (
+        !allowed.some((domain) => host === domain || host.endsWith(`.${domain}`)) ||
+        !hasValidProfilePath(platform, url)
+      ) {
         addIssue();
       }
     }),
