@@ -31,7 +31,7 @@ const LOCKED_EDIT_STATUSES = [
 ] as const;
 
 const EDITABLE_SELECT =
-  'id, full_name, email, phone_number, gender, age_range, state, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, status_reason, paused_at, suspended_at, created_at, updated_at';
+  'id, full_name, email, phone_number, gender, age_range, state, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, is_co_renting, status_reason, paused_at, suspended_at, created_at, updated_at';
 
 export interface CreateProfilePayload {
   email: string;
@@ -360,7 +360,7 @@ export class ProfileService {
    */
   async search(filters: SearchProfilesInput) {
     const select =
-      'id, full_name, phone_number, email, gender, age_range, state, marital_status, religion, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, smoking_habit, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, agreed_to_terms, created_at, updated_at';
+      'id, full_name, phone_number, email, gender, age_range, state, marital_status, religion, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, smoking_habit, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, is_co_renting, agreed_to_terms, created_at, updated_at';
 
     const applyFilters = (q: any) => {
       q = q.ilike('state', filters.state);
@@ -431,7 +431,7 @@ export class ProfileService {
    */
   async listAll(limit: number, offset: number) {
     const select =
-      'id, full_name, phone_number, email, gender, age_range, state, marital_status, religion, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, smoking_habit, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, agreed_to_terms, created_at, updated_at';
+      'id, full_name, phone_number, email, gender, age_range, state, marital_status, religion, preferred_locations, budget_min, budget_max, expected_move_in_date, occupation, smoking_habit, allows_pets, sleep_habit, personal_bio, referred_by_code, status, is_active, is_co_renting, agreed_to_terms, created_at, updated_at';
 
     const [listResult, countResult] = await Promise.all([
       supabase
