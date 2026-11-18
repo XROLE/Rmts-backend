@@ -66,20 +66,19 @@ export const getJobPosting = asyncHandler(async (req, res: Response) => {
 export const createJobApplication = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
     const file = (req as AuthenticatedRequest & { file?: Express.Multer.File }).file;
-    if (!file) {
-      res.status(400).json({
-        success: false,
-        message: 'A resume file (PDF or Word) is required',
-      });
-      return;
-    }
 
-    const application = await jobService.createApplication(req.user?.id ?? null, req.body, {
-      buffer: file.buffer,
-      mimetype: file.mimetype,
-      size: file.size,
-      originalname: file.originalname,
-    });
+    const application = await jobService.createApplication(
+      req.user?.id ?? null,
+      req.body,
+      file
+        ? {
+            buffer: file.buffer,
+            mimetype: file.mimetype,
+            size: file.size,
+            originalname: file.originalname,
+          }
+        : undefined,
+    );
 
     res.status(201).json({
       success: true,

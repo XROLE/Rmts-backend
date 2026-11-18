@@ -24,7 +24,7 @@ const APPLICATION_SELECT =
   'id, user_id, job_posting_id, full_name, email, phone_number, location, position, github_url, linkedin_url, resume_url, cover_note, notice_period, expected_salary_ngn, status, created_at';
 
 const POSTING_SELECT =
-  'id, title, department, employment_type, experience_level, work_mode, location, job_type, salary_min, salary_max, currency, show_salary, description, requirements, nice_to_haves, benefits, is_active, closing_date, created_by, created_at, updated_at';
+  'id, title, department, employment_type, experience_level, work_mode, location, job_type, salary_min, salary_max, currency, show_salary, description, requirements, nice_to_haves, benefits, is_active, closing_date, show_hiring_process, accept_cv, accept_notice_period, submission_platform, created_by, created_at, updated_at';
 
 export class JobService {
   /** Creates a job posting. Super-admin only (enforced at the route layer). */
@@ -49,6 +49,10 @@ export class JobService {
         benefits: input.benefits ?? null,
         is_active: input.isActive,
         closing_date: input.closingDate ? new Date(input.closingDate).toISOString() : null,
+        show_hiring_process: input.showHiringProcess,
+        accept_cv: input.acceptCv,
+        accept_notice_period: input.acceptNoticePeriod,
+        submission_platform: input.submissionPlatform ?? null,
         created_by: createdBy,
       })
       .select(POSTING_SELECT)
@@ -81,6 +85,10 @@ export class JobService {
       benefits: 'benefits',
       isActive: 'is_active',
       closingDate: 'closing_date',
+      showHiringProcess: 'show_hiring_process',
+      acceptCv: 'accept_cv',
+      acceptNoticePeriod: 'accept_notice_period',
+      submissionPlatform: 'submission_platform',
     };
 
     const update: Record<string, unknown> = {};
@@ -169,9 +177,9 @@ export class JobService {
   async createApplication(
     userId: string | null,
     input: CreateJobApplicationInput,
-    file: { buffer: Buffer; mimetype: string; size: number; originalname: string },
+    file?: { buffer: Buffer; mimetype: string; size: number; originalname: string },
   ) {
-    const resumeUrl = await this.uploadResume(file);
+    const resumeUrl = file ? await this.uploadResume(file) : null;
     const githubUrl = input.githubUrl?.trim() || null;
 
     if (input.expectedSalary == null && !(await this.isVolunteerRole(input.jobPostingId))) {
@@ -192,7 +200,7 @@ export class JobService {
         linkedin_url: input.linkedinUrl.trim() || null,
         resume_url: resumeUrl,
         cover_note: input.coverNote,
-        notice_period: input.noticePeriod,
+        notice_period: input.noticePeriod?.trim() || null,
         expected_salary_ngn: input.expectedSalary ?? null,
       })
       .select(APPLICATION_SELECT)
@@ -338,9 +346,9 @@ export class JobService {
     position: string;
     github_url: string | null;
     linkedin_url: string | null;
-    resume_url: string;
+    resume_url: string | null;
     cover_note: string;
-    notice_period: string;
+    notice_period: string | null;
     expected_salary_ngn: number | null;
   }): Promise<void> {
     await emailService.sendJobApplication({
@@ -349,13 +357,13 @@ export class JobService {
       phone: application.phone_number,
       position: application.position,
       location: application.location,
-      noticePeriod: application.notice_period,
+      noticePeriod: application.notice_period ?? 'Not specified',
       expectedSalary:
         application.expected_salary_ngn != null
           ? String(application.expected_salary_ngn)
           : 'Not specified (volunteer role)',
       coverNote: application.cover_note,
-      resumeUrl: application.resume_url,
+      resumeUrl: application.resume_url ?? undefined,
       linkedinUrl: application.linkedin_url ?? undefined,
       githubUrl: application.github_url ?? undefined,
     });
