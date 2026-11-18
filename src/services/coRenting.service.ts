@@ -92,6 +92,21 @@ export class CoRentingService {
     };
   }
 
+  async getViewerProfile(profileId: string) {
+    const { data, error } = await supabase
+      .from('roommate_profiles')
+      .select(CO_RENTING_SELECT)
+      .eq('id', profileId)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (error) {
+      throw new HttpError(500, `Failed to fetch co-renting viewer: ${error.message}`);
+    }
+
+    return data ?? null;
+  }
+
   /**
    * Admin-only transition of a co-renter's matching status. The profile must
    * exist and be registered for co-renting.

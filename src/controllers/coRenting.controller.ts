@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { coRentingService } from '../services/coRenting.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
+import type { CoRenterAccessRequest } from '../middleware/requireCoRenterAccess.js';
 import type { CoRentingRequest } from '../middleware/requireCoRentingLinkToken.js';
 import type {
   GetCoRentersInput,
@@ -32,15 +33,22 @@ export const setCoRentingInterest = asyncHandler(
  * Any registered user: paginated directory of registered co-renters.
  */
 export const getCoRenters = asyncHandler(
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (req: CoRenterAccessRequest, res: Response) => {
     const filters = req.query as unknown as GetCoRentersInput;
-    const { items, total } = await coRentingService.listCoRenters(filters);
+    const [renters, viewer] = await Promise.all([
+      coRentingService.listCoRenters(filters),
+      req.coRenting?.profileId
+        ? coRentingService.getViewerProfile(req.coRenting.profileId)
+        : Promise.resolve(null),
+    ]);
+    const { items, total } = renters;
 
     res.status(200).json({
       success: true,
       message: 'Co-renters retrieved successfully',
       data: {
         items,
+        viewer,
         pagination: { total, limit: filters.limit, offset: filters.offset },
       },
     });
