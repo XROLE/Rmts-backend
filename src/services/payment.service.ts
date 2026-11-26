@@ -4,6 +4,7 @@ import { supabase } from '../config/supabase.js';
 import { paystackService } from './paystack.service.js';
 import { matchService } from './match.service.js';
 import { whatsappLifecycleService } from './whatsappLifecycle.service.js';
+import { coRentingConnectionService } from './coRentingConnection.service.js';
 import { emailService } from './email.service.js';
 import type {
   ConfirmWithdrawalInput,
@@ -450,6 +451,15 @@ export class PaymentService {
         await whatsappLifecycleService.fulfillRentalRegistrationFee(reference);
       } catch (err) {
         console.error('[paystack-webhook] rental registration fulfillment failed:', err);
+      }
+      return { handled: true };
+    }
+
+    if (txn.purpose === 'corenting_matching_fee') {
+      try {
+        await coRentingConnectionService.fulfillMatchingFee(reference);
+      } catch (err) {
+        console.error('[paystack-webhook] co-renting matching fee fulfillment failed:', err);
       }
       return { handled: true };
     }

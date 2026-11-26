@@ -14,6 +14,7 @@ import {
   type TriggerMatchInput,
 } from '../services/whatsappLifecycle.service.js';
 import { sidoBotService } from '../services/sidoBot.service.js';
+import { coRentingConnectionService } from '../services/coRentingConnection.service.js';
 import { normalizePhoneToE164, normalizeAnyPhoneToE164 } from '../utils/normalizePhone.js';
 
 const REGISTRATION_PREFILLED_TEXT =
@@ -127,6 +128,10 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
         }
 
         const text = String(message.text?.body ?? '');
+
+        if (await coRentingConnectionService.handleInboundTrigger(phoneE164, contactName, text)) {
+          continue;
+        }
 
         // Sido (AI assistant) takes over conversational replies whenever it is
         // configured. Process in the background so Meta's webhook ACKs instantly.
@@ -249,6 +254,12 @@ export async function whatsappWebhookPost(req: Request, res: Response) {
                   );
               }
             }
+          } else if (payload.startsWith('CORENT_')) {
+            const handled = await coRentingConnectionService.handleButtonReply(
+              phoneE164,
+              payload,
+            );
+            console.log(`[whatsapp] co-renting connection button from ${phoneE164} ->`, handled);
           } else if (payload.startsWith(CO_RENTING_HUB_PAYLOAD_PREFIX)) {
             // Co-renting hub nudge button: deliver the real hub link as a CTA.
             const result = await whatsappLifecycleService.handleCoRentingHubButtonReply(
